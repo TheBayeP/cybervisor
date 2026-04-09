@@ -6,10 +6,13 @@ export const translations = {
     },
     nav: {
       dashboard: 'Tableau de Bord',
+      watch: 'Veille Cyber',
       feeds: 'Flux',
       cves: 'CVE',
       synthesis: 'Synthèse',
       alerts: 'Alertes',
+      compliance: 'Conformité',
+      sources: 'Sources',
       settings: 'Paramètres',
     },
     dashboard: {
@@ -194,10 +197,13 @@ export const translations = {
     },
     nav: {
       dashboard: 'Dashboard',
+      watch: 'Cyber Watch',
       feeds: 'Feeds',
       cves: 'CVEs',
       synthesis: 'Synthesis',
       alerts: 'Alerts',
+      compliance: 'Compliance',
+      sources: 'Sources',
       settings: 'Settings',
     },
     dashboard: {

@@ -15,6 +15,9 @@ import {
   Moon,
   X,
   Languages,
+  Radar,
+  ClipboardCheck,
+  Rss,
 } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n/context';
 import { useTheme } from '@/lib/theme/context';
@@ -48,6 +51,7 @@ export function Sidebar({ open, onClose, alertCount = 0 }: SidebarProps) {
 
   const navItems: NavItem[] = [
     { href: '/dashboard', labelKey: 'nav.dashboard', icon: LayoutDashboard },
+    { href: '/watch', labelKey: 'nav.watch', icon: Radar },
     { href: '/feeds', labelKey: 'nav.feeds', icon: Newspaper },
     { href: '/cves', labelKey: 'nav.cves', icon: Bug },
     { href: '/synthesis', labelKey: 'nav.synthesis', icon: Brain },
@@ -57,6 +61,8 @@ export function Sidebar({ open, onClose, alertCount = 0 }: SidebarProps) {
       icon: AlertTriangle,
       badge: alertCount,
     },
+    { href: '/compliance', labelKey: 'nav.compliance', icon: ClipboardCheck },
+    { href: '/sources', labelKey: 'nav.sources', icon: Rss },
     { href: '/settings', labelKey: 'nav.settings', icon: Settings },
   ];
 
