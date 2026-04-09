@@ -3,7 +3,7 @@ const nextConfig = {
   output: 'standalone',
   experimental: {
     instrumentationHook: true,
-    serverComponentsExternalPackages: ['sql.js', 'nodemailer'],
+    serverComponentsExternalPackages: ['better-sqlite3', 'nodemailer'],
   },
   webpack: (config) => {
     config.resolve.fallback = {

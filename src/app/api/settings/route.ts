@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, getSetting, setSetting } from "@/lib/db";
+import { getDb, setSetting } from "@/lib/db";
 
 /** Setting keys that contain sensitive data -- values are masked in GET responses */
 const SENSITIVE_KEYS = [
@@ -29,16 +29,12 @@ function maskValue(value: string): string {
 
 export async function GET() {
   try {
-    const d = await getDb();
-    const result = d.exec("SELECT key, value FROM settings ORDER BY key ASC");
+    const d = getDb();
+    const rows = d.prepare("SELECT key, value FROM settings ORDER BY key ASC").all() as Array<{ key: string; value: string | null }>;
 
     const settings: Record<string, string | null> = {};
-    if (result.length > 0) {
-      for (const row of result[0].values) {
-        const key = row[0] as string;
-        const value = row[1] as string | null;
-        settings[key] = value && isSensitive(key) ? maskValue(value) : value;
-      }
+    for (const row of rows) {
+      settings[row.key] = row.value && isSensitive(row.key) ? maskValue(row.value) : row.value;
     }
 
     return NextResponse.json({ settings });
@@ -78,7 +74,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await setSetting(key, String(value));
+    setSetting(key, String(value));
 
     return NextResponse.json({
       message: "Setting updated successfully",

@@ -134,7 +134,7 @@ export async function generateSynthesis(
   timeSlot: TimeSlot
 ): Promise<GeneratedSynthesis> {
   // Resolve API key: DB setting takes precedence, then env var
-  const dbKey = await getSetting("claude_api_key");
+  const dbKey = getSetting("claude_api_key");
   const apiKey = dbKey || process.env.ANTHROPIC_API_KEY;
 
   if (!apiKey) {
@@ -144,7 +144,7 @@ export async function generateSynthesis(
   }
 
   // Fetch the previous synthesis for continuity context
-  const previousSynthesis = await getLatestSynthesis();
+  const previousSynthesis = getLatestSynthesis();
 
   // Determine the "since" cutoff: use previous synthesis date or fall back to 12h ago
   const sinceDate = previousSynthesis?.created_at
@@ -152,8 +152,8 @@ export async function generateSynthesis(
     : new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
 
   // Collect articles and CVEs since last synthesis
-  const articles = await getArticles({ since: sinceDate, limit: 50 });
-  const cves = await getCves({ since: sinceDate, limit: 50 });
+  const articles = getArticles({ since: sinceDate, limit: 50 });
+  const cves = getCves({ since: sinceDate, limit: 50 });
   const criticalCves = cves.filter(
     (c) => c.cvss_score != null && c.cvss_score >= 9
   );
@@ -212,7 +212,7 @@ export async function generateSynthesis(
   };
 
   // Persist to database
-  await saveSynthesis(synthesis);
+  saveSynthesis(synthesis);
 
   return synthesis;
 }

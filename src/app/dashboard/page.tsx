@@ -89,7 +89,7 @@ interface CveRow {
 // Data-fetching hook
 // ---------------------------------------------------------------------------
 
-const REFRESH_INTERVAL = 60_000;
+const REFRESH_INTERVAL = 120_000;
 
 interface DashboardData {
   stats: DashboardStats | null;
@@ -116,6 +116,7 @@ function useDashboardData() {
     trendingTopics: [],
   });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -126,9 +127,14 @@ function useDashboardData() {
           fetch('/api/stats'),
           fetch('/api/alerts?acknowledged=false&limit=5'),
           fetch('/api/synthesis?limit=1'),
-          fetch('/api/articles?limit=100'),
-          fetch('/api/cves?limit=100'),
+          fetch('/api/articles?limit=50'),
+          fetch('/api/cves?limit=50'),
         ]);
+
+      // Check for failed responses
+      if (!statsRes.ok || !alertsRes.ok || !synthesisRes.ok || !articlesRes.ok || !cvesRes.ok) {
+        throw new Error('One or more API requests failed');
+      }
 
       const statsJson = await statsRes.json();
       const alertsJson = await alertsRes.json();
@@ -141,7 +147,7 @@ function useDashboardData() {
       const syntheses: SynthesisRow[] = synthesisJson.syntheses ?? [];
       const synthesis = syntheses[0] ?? null;
       const articles: ArticleRow[] = articlesJson.articles ?? [];
-      const cves: CveRow[] = cvesJson ?? (Array.isArray(cvesJson) ? cvesJson : cvesJson.cves ?? []);
+      const cvesParsed = cvesJson?.cves ?? [];
 
       // --- Severity distribution from alerts + articles ---
       const sevCounts: Record<string, number> = {
@@ -152,7 +158,7 @@ function useDashboardData() {
         info: 0,
       };
       for (const a of articles) {
-        const sev = a.severity?.toLowerCase();
+        const sev = (a.severity as string | undefined)?.toLowerCase();
         if (sev && sev in sevCounts) sevCounts[sev]++;
       }
       const severityDist: SeverityData[] = Object.entries(sevCounts).map(
@@ -169,7 +175,7 @@ function useDashboardData() {
       const cvssBuckets: Record<string, number> = {};
       const ranges = ['0-1', '1-2', '2-3', '3-4', '4-5', '5-6', '6-7', '7-8', '8-9', '9-10'];
       for (const r of ranges) cvssBuckets[r] = 0;
-      for (const c of cves) {
+      for (const c of cvesParsed) {
         const score = c.cvss_score;
         if (score == null) continue;
         const idx = Math.min(Math.floor(score), 9);
@@ -196,7 +202,7 @@ function useDashboardData() {
         const key = `${String(d.getHours()).padStart(2, '0')}:00`;
         if (hourBuckets[key]) hourBuckets[key].articles++;
       }
-      for (const c of cves) {
+      for (const c of cvesParsed) {
         const d = new Date(c.collected_at);
         if (d < cutoff24h) continue;
         const key = `${String(d.getHours()).padStart(2, '0')}:00`;
@@ -255,6 +261,7 @@ function useDashboardData() {
       setLastRefresh(new Date());
     } catch (err) {
       console.error('Dashboard fetch error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
@@ -268,7 +275,7 @@ function useDashboardData() {
     };
   }, [fetchAll]);
 
-  return { ...data, loading, lastRefresh, refresh: fetchAll };
+  return { ...data, loading, error, lastRefresh, refresh: fetchAll };
 }
 
 // ---------------------------------------------------------------------------
@@ -394,6 +401,7 @@ export default function DashboardPage() {
     topSources,
     trendingTopics,
     loading,
+    error,
     lastRefresh,
     refresh,
   } = useDashboardData();
@@ -437,6 +445,21 @@ export default function DashboardPage() {
           {t('common.refresh')}
         </Button>
       </div>
+
+      {/* Error state */}
+      {error && !loading && (
+        <div className="rounded-lg border border-red-300 bg-red-50 p-4 dark:border-red-800/60 dark:bg-red-900/20">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-red-500" />
+            <p className="text-sm font-medium text-red-800 dark:text-red-300">
+              {t('common.error') ?? 'Error'}: {error}
+            </p>
+          </div>
+          <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+            {t('common.tryAgain') ?? 'Click refresh to retry.'}
+          </p>
+        </div>
+      )}
 
       {/* Row 1: Stat Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

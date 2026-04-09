@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = request.nextUrl;
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") ?? "10", 10) || 10));
 
-    const syntheses = await getSyntheses(limit);
+    const syntheses = getSyntheses(limit);
 
     return NextResponse.json({ syntheses });
   } catch (error) {

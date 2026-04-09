@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useLanguage } from '@/lib/i18n';
 import { ArticleCard } from '@/components/feeds/ArticleCard';
+import { TimePeriodFilter, getStartDateFromPeriod, type TimePeriod, type SortOption } from '@/components/feeds/TimePeriodFilter';
 import { Button } from '@/components/ui';
 import { Search, Filter, X, Download, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -40,6 +41,8 @@ export default function FeedsPage() {
   const [category, setCategory] = useState('all');
   const [severity, setSeverity] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
+  const [period, setPeriod] = useState<TimePeriod>('all');
+  const [sortBy, setSortBy] = useState<SortOption>('date_desc');
   const limit = 20;
 
   const fetchArticles = useCallback(async () => {
@@ -49,6 +52,9 @@ export default function FeedsPage() {
       if (search) params.set('search', search);
       if (category !== 'all') params.set('category', category);
       if (severity !== 'all') params.set('severity', severity);
+      const startDate = getStartDateFromPeriod(period);
+      if (startDate) params.set('startDate', startDate);
+      params.set('sort', sortBy);
 
       const res = await fetch(`/api/articles?${params}`);
       const data = await res.json();
@@ -60,7 +66,7 @@ export default function FeedsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, category, severity]);
+  }, [page, search, category, severity, period, sortBy]);
 
   useEffect(() => { fetchArticles(); }, [fetchArticles]);
 
@@ -69,16 +75,18 @@ export default function FeedsPage() {
     return () => clearInterval(interval);
   }, [fetchArticles]);
 
-  useEffect(() => { setPage(1); }, [search, category, severity]);
+  useEffect(() => { setPage(1); }, [search, category, severity, period, sortBy]);
 
   const clearFilters = () => {
     setSearch('');
     setCategory('all');
     setSeverity('all');
+    setPeriod('all');
+    setSortBy('date_desc');
     setPage(1);
   };
 
-  const hasFilters = search || category !== 'all' || severity !== 'all';
+  const hasFilters = search || category !== 'all' || severity !== 'all' || period !== 'all' || sortBy !== 'date_desc';
 
   const handleExport = () => {
     const params = new URLSearchParams({ type: 'articles', format: 'csv' });
@@ -184,6 +192,9 @@ export default function FeedsPage() {
           </div>
         )}
       </div>
+
+      {/* Time Period & Sort */}
+      <TimePeriodFilter period={period} setPeriod={setPeriod} sortBy={sortBy} setSortBy={setSortBy} />
 
       {/* Articles List */}
       {loading ? (

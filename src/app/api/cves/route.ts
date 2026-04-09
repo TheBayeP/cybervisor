@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCves, getDb, type CveFilters } from "@/lib/db";
+import { getCves, getCveCount, type CveFilters } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
   try {
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
       offset,
     };
 
-    const cves = await getCves(filters);
+    const cves = getCves(filters);
 
     // Filter by maxScore in-memory since the db module only supports min_cvss
     const filteredCves = maxScore !== undefined
@@ -56,22 +56,12 @@ export async function GET(request: NextRequest) {
       : cves;
 
     // Count total matching CVEs for pagination
-    const d = await getDb();
-    const conditions: string[] = [];
-    const params: unknown[] = [];
-
-    if (severity) { conditions.push("severity = ?"); params.push(severity); }
-    if (minScore !== undefined) { conditions.push("cvss_score >= ?"); params.push(minScore); }
-    if (maxScore !== undefined) { conditions.push("cvss_score <= ?"); params.push(maxScore); }
-    if (search) {
-      conditions.push("(cve_id LIKE ? OR description LIKE ? OR affected_products LIKE ?)");
-      const term = `%${search}%`;
-      params.push(term, term, term);
-    }
-
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-    const countResult = d.exec(`SELECT COUNT(*) as count FROM cves ${where}`, params);
-    const total = countResult.length > 0 ? (countResult[0].values[0][0] as number) : 0;
+    const total = getCveCount({
+      severity,
+      min_cvss: minScore,
+      max_cvss: maxScore,
+      search,
+    });
     const totalPages = Math.ceil(total / limit);
 
     return NextResponse.json({

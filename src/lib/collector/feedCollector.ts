@@ -1,6 +1,6 @@
 import RssParser from "rss-parser";
 import { sources, getSourceById, type Source } from "../sources";
-import { saveArticle, type ArticleInput } from "../db";
+import { saveArticlesBatch, type ArticleInput } from "../db";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -109,7 +109,7 @@ async function runWithConcurrency<T>(
 // ---------------------------------------------------------------------------
 
 const parser = new RssParser({
-  timeout: 10_000,
+  timeout: 15_000,
   headers: {
     "User-Agent": "CyberVisor/1.0 (RSS Feed Collector)",
     Accept: "application/rss+xml, application/xml, text/xml, application/atom+xml",
@@ -131,6 +131,9 @@ async function fetchAndSaveFeed(source: Source): Promise<SingleFeedResult> {
     const items = feed.items ?? [];
     result.total = items.length;
 
+    // Prepare all articles for batch insert
+    const articles: ArticleInput[] = [];
+
     for (const item of items) {
       const title = item.title?.trim();
       const link = item.link?.trim();
@@ -147,7 +150,7 @@ async function fetchAndSaveFeed(source: Source): Promise<SingleFeedResult> {
 
       const pubDate = item.pubDate || item.isoDate || null;
 
-      const article: ArticleInput = {
+      articles.push({
         source_id: source.id,
         title,
         description: description || null,
@@ -157,15 +160,12 @@ async function fetchAndSaveFeed(source: Source): Promise<SingleFeedResult> {
         severity,
         country: source.country,
         language: source.language,
-      };
+      });
+    }
 
-      try {
-        await saveArticle(article);
-        result.new++;
-      } catch {
-        // INSERT OR IGNORE means duplicates silently skip; if we get here
-        // it's a genuine DB error, but we count the item as processed.
-      }
+    // Batch insert all articles in a single transaction
+    if (articles.length > 0) {
+      result.new = saveArticlesBatch(articles);
     }
   } catch (err) {
     result.error =
@@ -195,7 +195,8 @@ export async function collectAllFeeds(): Promise<FeedCollectionStats> {
       }))
   );
 
-  const results = await runWithConcurrency(tasks, 10);
+  // Reduced concurrency from 10 to 5 to lower memory usage
+  const results = await runWithConcurrency(tasks, 5);
 
   for (const { sourceId, result } of results) {
     stats.bySource[sourceId] = {

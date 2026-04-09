@@ -227,7 +227,7 @@ export async function collectRecentCves(
       };
 
       try {
-        await saveCve(cveInput);
+        saveCve(cveInput);
         stats.new++;
       } catch {
         // INSERT OR REPLACE handles duplicates; genuine errors are rare
@@ -257,7 +257,7 @@ export async function collectRecentCves(
         };
 
         try {
-          await saveAlert(alert);
+          saveAlert(alert);
         } catch {
           // Alert may already exist or other DB issue; non-fatal
         }

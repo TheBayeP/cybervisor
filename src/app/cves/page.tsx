@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useLanguage } from '@/lib/i18n';
 import { CveCard } from '@/components/feeds/CveCard';
+import { TimePeriodFilter, getStartDateFromPeriod, type TimePeriod, type SortOption } from '@/components/feeds/TimePeriodFilter';
 import { Button } from '@/components/ui';
 import { Search, RefreshCw, ChevronLeft, ChevronRight, Download, SlidersHorizontal } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -35,6 +36,8 @@ export default function CvesPage() {
   const [minScore, setMinScore] = useState('');
   const [maxScore, setMaxScore] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [period, setPeriod] = useState<TimePeriod>('all');
+  const [sortBy, setSortBy] = useState<SortOption>('date_desc');
   const limit = 20;
 
   const fetchCves = useCallback(async () => {
@@ -45,6 +48,9 @@ export default function CvesPage() {
       if (severity !== 'all') params.set('severity', severity);
       if (minScore) params.set('minScore', minScore);
       if (maxScore) params.set('maxScore', maxScore);
+      const startDate = getStartDateFromPeriod(period);
+      if (startDate) params.set('startDate', startDate);
+      params.set('sort', sortBy);
 
       const res = await fetch(`/api/cves?${params}`);
       const data = await res.json();
@@ -56,10 +62,10 @@ export default function CvesPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, severity, minScore, maxScore]);
+  }, [page, search, severity, minScore, maxScore, period, sortBy]);
 
   useEffect(() => { fetchCves(); }, [fetchCves]);
-  useEffect(() => { setPage(1); }, [search, severity, minScore, maxScore]);
+  useEffect(() => { setPage(1); }, [search, severity, minScore, maxScore, period, sortBy]);
 
   const handleExport = () => {
     const params = new URLSearchParams({ type: 'cves', format: 'csv' });
@@ -167,6 +173,9 @@ export default function CvesPage() {
           </div>
         )}
       </div>
+
+      {/* Time Period & Sort */}
+      <TimePeriodFilter period={period} setPeriod={setPeriod} sortBy={sortBy} setSortBy={setSortBy} />
 
       {/* CVE List */}
       {loading ? (

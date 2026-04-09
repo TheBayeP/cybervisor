@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
       limit,
     };
 
-    const alerts = await getAlerts(filters);
+    const alerts = getAlerts(filters);
 
     return NextResponse.json({ alerts });
   } catch (error) {
@@ -64,16 +64,16 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Verify the alert exists
-    const d = await getDb();
-    const result = d.exec("SELECT id FROM alerts WHERE id = ?", [id]);
-    if (result.length === 0 || result[0].values.length === 0) {
+    const d = getDb();
+    const row = d.prepare("SELECT id FROM alerts WHERE id = ?").get(id);
+    if (!row) {
       return NextResponse.json(
         { error: `Alert with id ${id} not found` },
         { status: 404 }
       );
     }
 
-    await acknowledgeAlert(id);
+    acknowledgeAlert(id);
 
     return NextResponse.json({
       message: "Alert acknowledged successfully",

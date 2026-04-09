@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
           limit: exportLimit,
           offset: 0,
         };
-        rows = (await getArticles(filters)) as unknown as Record<string, unknown>[];
+        rows = getArticles(filters) as unknown as Record<string, unknown>[];
         filename = "cybervisor-articles.csv";
         break;
       }
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
           limit: exportLimit,
           offset: 0,
         };
-        rows = (await getCves(filters)) as unknown as Record<string, unknown>[];
+        rows = getCves(filters) as unknown as Record<string, unknown>[];
 
         const maxScore = searchParams.get("maxScore") ? parseFloat(searchParams.get("maxScore")!) : undefined;
         if (maxScore !== undefined) {
@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
           limit: exportLimit,
           offset: 0,
         };
-        rows = (await getAlerts(filters)) as unknown as Record<string, unknown>[];
+        rows = getAlerts(filters) as unknown as Record<string, unknown>[];
         filename = "cybervisor-alerts.csv";
         break;
       }

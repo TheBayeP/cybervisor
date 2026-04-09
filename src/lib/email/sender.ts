@@ -12,11 +12,11 @@ interface SmtpConfig {
   password: string;
 }
 
-async function getSmtpConfig(): Promise<SmtpConfig> {
-  const host = await getSetting("smtp_host");
-  const port = await getSetting("smtp_port");
-  const user = await getSetting("smtp_user");
-  const password = await getSetting("smtp_password");
+function getSmtpConfig(): SmtpConfig {
+  const host = getSetting("smtp_host");
+  const port = getSetting("smtp_port");
+  const user = getSetting("smtp_user");
+  const password = getSetting("smtp_password");
 
   if (!host || !port || !user || !password) {
     throw new Error(
@@ -205,7 +205,7 @@ export async function sendSynthesisEmail(
   synthesis: SynthesisRow,
   recipientEmail: string
 ): Promise<void> {
-  const config = await getSmtpConfig();
+  const config = getSmtpConfig();
   const transporter = createTransporter(config);
 
   const slotLabel = synthesis.time_slot === "08:00" ? "Morning" : "Afternoon";
@@ -230,7 +230,7 @@ export async function sendAlertEmail(
   alert: AlertRow,
   recipientEmail: string
 ): Promise<void> {
-  const config = await getSmtpConfig();
+  const config = getSmtpConfig();
   const transporter = createTransporter(config);
 
   const severityTag = alert.severity ? `[${alert.severity.toUpperCase()}]` : "";
@@ -253,7 +253,7 @@ export async function sendAlertEmail(
  * Returns true if the connection succeeds, throws on failure.
  */
 export async function testEmailConnection(): Promise<boolean> {
-  const config = await getSmtpConfig();
+  const config = getSmtpConfig();
   const transporter = createTransporter(config);
   await transporter.verify();
   return true;

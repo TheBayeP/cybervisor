@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getArticles, getDb, type ArticleFilters } from "@/lib/db";
+import { getArticles, getArticleCount, type ArticleFilters } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
   try {
@@ -37,28 +37,18 @@ export async function GET(request: NextRequest) {
       offset,
     };
 
-    const articles = await getArticles(filters);
+    const articles = getArticles(filters);
 
     // Count total matching articles for pagination
-    const d = await getDb();
-    const conditions: string[] = [];
-    const params: unknown[] = [];
-
-    if (category) { conditions.push("category = ?"); params.push(category); }
-    if (severity) { conditions.push("severity = ?"); params.push(severity); }
-    if (source) { conditions.push("source_id = ?"); params.push(source); }
-    if (country) { conditions.push("country = ?"); params.push(country); }
-    if (startDate) { conditions.push("collected_at >= ?"); params.push(startDate); }
-    if (endDate) { conditions.push("collected_at <= ?"); params.push(endDate); }
-    if (search) {
-      conditions.push("(title LIKE ? OR description LIKE ?)");
-      const term = `%${search}%`;
-      params.push(term, term);
-    }
-
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-    const countResult = d.exec(`SELECT COUNT(*) as count FROM articles ${where}`, params);
-    const total = countResult.length > 0 ? (countResult[0].values[0][0] as number) : 0;
+    const total = getArticleCount({
+      category,
+      severity,
+      source_id: source,
+      country,
+      since: startDate,
+      endDate,
+      search,
+    });
     const totalPages = Math.ceil(total / limit);
 
     return NextResponse.json({

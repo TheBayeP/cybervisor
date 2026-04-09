@@ -1,23 +1,16 @@
-import initSqlJs, { type Database } from "sql.js";
-import fs from "fs";
+import Database from "better-sqlite3";
 import path from "path";
+import fs from "fs";
 
 const DB_DIR = path.resolve("./data");
 const DB_PATH = path.join(DB_DIR, "cybervisor.db");
 
-let db: Database | null = null;
+let db: Database.Database | null = null;
 
 function ensureDataDir(): void {
   if (!fs.existsSync(DB_DIR)) {
     fs.mkdirSync(DB_DIR, { recursive: true });
   }
-}
-
-function saveToDisk(): void {
-  if (!db) return;
-  ensureDataDir();
-  const data = db.export();
-  fs.writeFileSync(DB_PATH, Buffer.from(data));
 }
 
 const CREATE_TABLES_SQL = `
@@ -86,21 +79,37 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 `;
 
-export async function getDb(): Promise<Database> {
+const CREATE_INDEXES_SQL = `
+CREATE INDEX IF NOT EXISTS idx_articles_collected_at ON articles(collected_at);
+CREATE INDEX IF NOT EXISTS idx_articles_category ON articles(category);
+CREATE INDEX IF NOT EXISTS idx_articles_severity ON articles(severity);
+CREATE INDEX IF NOT EXISTS idx_articles_source_id ON articles(source_id);
+CREATE INDEX IF NOT EXISTS idx_articles_country ON articles(country);
+CREATE INDEX IF NOT EXISTS idx_cves_collected_at ON cves(collected_at);
+CREATE INDEX IF NOT EXISTS idx_cves_severity ON cves(severity);
+CREATE INDEX IF NOT EXISTS idx_cves_cvss_score ON cves(cvss_score);
+CREATE INDEX IF NOT EXISTS idx_alerts_created_at ON alerts(created_at);
+CREATE INDEX IF NOT EXISTS idx_alerts_severity ON alerts(severity);
+CREATE INDEX IF NOT EXISTS idx_alerts_acknowledged ON alerts(acknowledged);
+`;
+
+export function getDb(): Database.Database {
   if (db) return db;
 
   ensureDataDir();
-  const SQL = await initSqlJs();
 
-  if (fs.existsSync(DB_PATH)) {
-    const fileBuffer = fs.readFileSync(DB_PATH);
-    db = new SQL.Database(fileBuffer);
-  } else {
-    db = new SQL.Database();
-  }
+  db = new Database(DB_PATH);
 
-  db.run(CREATE_TABLES_SQL);
-  saveToDisk();
+  // Enable WAL mode for better concurrent read/write performance
+  // and reduced memory usage compared to default journal mode
+  db.pragma("journal_mode = WAL");
+  db.pragma("busy_timeout = 5000");
+  db.pragma("cache_size = -2000"); // 2MB cache (negative = KB)
+  db.pragma("foreign_keys = ON");
+
+  db.exec(CREATE_TABLES_SQL);
+  db.exec(CREATE_INDEXES_SQL);
+
   return db;
 }
 
@@ -143,33 +152,67 @@ export interface ArticleFilters {
   search?: string;
 }
 
-export async function saveArticle(article: ArticleInput): Promise<void> {
-  const d = await getDb();
-  d.run(
+export function saveArticle(article: ArticleInput): void {
+  const d = getDb();
+  const stmt = d.prepare(
     `INSERT OR IGNORE INTO articles
       (source_id, title, title_fr, title_en, description, description_fr, description_en, link, pub_date, category, severity, country, language)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      article.source_id,
-      article.title,
-      article.title_fr ?? null,
-      article.title_en ?? null,
-      article.description ?? null,
-      article.description_fr ?? null,
-      article.description_en ?? null,
-      article.link,
-      article.pub_date ?? null,
-      article.category ?? null,
-      article.severity ?? null,
-      article.country ?? null,
-      article.language ?? null,
-    ]
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
-  saveToDisk();
+  stmt.run(
+    article.source_id,
+    article.title,
+    article.title_fr ?? null,
+    article.title_en ?? null,
+    article.description ?? null,
+    article.description_fr ?? null,
+    article.description_en ?? null,
+    article.link,
+    article.pub_date ?? null,
+    article.category ?? null,
+    article.severity ?? null,
+    article.country ?? null,
+    article.language ?? null,
+  );
 }
 
-export async function getArticles(filters: ArticleFilters = {}): Promise<ArticleRow[]> {
-  const d = await getDb();
+/** Batch-insert multiple articles inside a single transaction. */
+export function saveArticlesBatch(articles: ArticleInput[]): number {
+  const d = getDb();
+  const stmt = d.prepare(
+    `INSERT OR IGNORE INTO articles
+      (source_id, title, title_fr, title_en, description, description_fr, description_en, link, pub_date, category, severity, country, language)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+
+  let inserted = 0;
+  const tx = d.transaction((items: ArticleInput[]) => {
+    for (const a of items) {
+      const info = stmt.run(
+        a.source_id,
+        a.title,
+        a.title_fr ?? null,
+        a.title_en ?? null,
+        a.description ?? null,
+        a.description_fr ?? null,
+        a.description_en ?? null,
+        a.link,
+        a.pub_date ?? null,
+        a.category ?? null,
+        a.severity ?? null,
+        a.country ?? null,
+        a.language ?? null,
+      );
+      if (info.changes > 0) inserted++;
+    }
+  });
+
+  tx(articles);
+  return inserted;
+}
+
+export function getArticles(filters: ArticleFilters = {}): ArticleRow[] {
+  const d = getDb();
   const conditions: string[] = [];
   const params: unknown[] = [];
 
@@ -214,22 +257,37 @@ export async function getArticles(filters: ArticleFilters = {}): Promise<Article
   const stmt = d.prepare(
     `SELECT * FROM articles ${where} ORDER BY collected_at DESC LIMIT ? OFFSET ?`
   );
-  stmt.bind([...params, limit, offset]);
-
-  const rows: ArticleRow[] = [];
-  while (stmt.step()) {
-    rows.push(stmt.getAsObject() as unknown as ArticleRow);
-  }
-  stmt.free();
-  return rows;
+  return stmt.all(...params, limit, offset) as ArticleRow[];
 }
 
-export async function getArticleCount(since?: string): Promise<number> {
-  const d = await getDb();
-  const where = since ? "WHERE collected_at >= ?" : "";
-  const params = since ? [since] : [];
-  const result = d.exec(`SELECT COUNT(*) as count FROM articles ${where}`, params);
-  return result.length > 0 ? (result[0].values[0][0] as number) : 0;
+export function getArticleCount(filters: {
+  category?: string;
+  severity?: string;
+  source_id?: string;
+  country?: string;
+  since?: string;
+  endDate?: string;
+  search?: string;
+} = {}): number {
+  const d = getDb();
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (filters.category) { conditions.push("category = ?"); params.push(filters.category); }
+  if (filters.severity) { conditions.push("severity = ?"); params.push(filters.severity); }
+  if (filters.source_id) { conditions.push("source_id = ?"); params.push(filters.source_id); }
+  if (filters.country) { conditions.push("country = ?"); params.push(filters.country); }
+  if (filters.since) { conditions.push("collected_at >= ?"); params.push(filters.since); }
+  if (filters.endDate) { conditions.push("collected_at <= ?"); params.push(filters.endDate); }
+  if (filters.search) {
+    conditions.push("(title LIKE ? OR description LIKE ?)");
+    const term = `%${filters.search}%`;
+    params.push(term, term);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const row = d.prepare(`SELECT COUNT(*) as count FROM articles ${where}`).get(...params) as { count: number } | undefined;
+  return row?.count ?? 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -263,30 +321,28 @@ export interface CveFilters {
   offset?: number;
 }
 
-export async function saveCve(cve: CveInput): Promise<void> {
-  const d = await getDb();
-  d.run(
+export function saveCve(cve: CveInput): void {
+  const d = getDb();
+  d.prepare(
     `INSERT OR REPLACE INTO cves
       (cve_id, description, description_fr, cvss_score, cvss_vector, severity, published_date, modified_date, references_json, affected_products)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      cve.cve_id,
-      cve.description ?? null,
-      cve.description_fr ?? null,
-      cve.cvss_score ?? null,
-      cve.cvss_vector ?? null,
-      cve.severity ?? null,
-      cve.published_date ?? null,
-      cve.modified_date ?? null,
-      cve.references_json ?? null,
-      cve.affected_products ?? null,
-    ]
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    cve.cve_id,
+    cve.description ?? null,
+    cve.description_fr ?? null,
+    cve.cvss_score ?? null,
+    cve.cvss_vector ?? null,
+    cve.severity ?? null,
+    cve.published_date ?? null,
+    cve.modified_date ?? null,
+    cve.references_json ?? null,
+    cve.affected_products ?? null,
   );
-  saveToDisk();
 }
 
-export async function getCves(filters: CveFilters = {}): Promise<CveRow[]> {
-  const d = await getDb();
+export function getCves(filters: CveFilters = {}): CveRow[] {
+  const d = getDb();
   const conditions: string[] = [];
   const params: unknown[] = [];
 
@@ -312,25 +368,33 @@ export async function getCves(filters: CveFilters = {}): Promise<CveRow[]> {
   const limit = filters.limit ?? 100;
   const offset = filters.offset ?? 0;
 
-  const stmt = d.prepare(
+  return d.prepare(
     `SELECT * FROM cves ${where} ORDER BY collected_at DESC LIMIT ? OFFSET ?`
-  );
-  stmt.bind([...params, limit, offset]);
-
-  const rows: CveRow[] = [];
-  while (stmt.step()) {
-    rows.push(stmt.getAsObject() as unknown as CveRow);
-  }
-  stmt.free();
-  return rows;
+  ).all(...params, limit, offset) as CveRow[];
 }
 
-export async function getCveCount(since?: string): Promise<number> {
-  const d = await getDb();
-  const where = since ? "WHERE collected_at >= ?" : "";
-  const params = since ? [since] : [];
-  const result = d.exec(`SELECT COUNT(*) as count FROM cves ${where}`, params);
-  return result.length > 0 ? (result[0].values[0][0] as number) : 0;
+export function getCveCount(filters: {
+  severity?: string;
+  min_cvss?: number;
+  max_cvss?: number;
+  search?: string;
+} = {}): number {
+  const d = getDb();
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (filters.severity) { conditions.push("severity = ?"); params.push(filters.severity); }
+  if (filters.min_cvss !== undefined) { conditions.push("cvss_score >= ?"); params.push(filters.min_cvss); }
+  if (filters.max_cvss !== undefined) { conditions.push("cvss_score <= ?"); params.push(filters.max_cvss); }
+  if (filters.search) {
+    conditions.push("(cve_id LIKE ? OR description LIKE ? OR affected_products LIKE ?)");
+    const term = `%${filters.search}%`;
+    params.push(term, term, term);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const row = d.prepare(`SELECT COUNT(*) as count FROM cves ${where}`).get(...params) as { count: number } | undefined;
+  return row?.count ?? 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -352,42 +416,32 @@ export interface SynthesisRow extends SynthesisInput {
   created_at: string;
 }
 
-export async function saveSynthesis(synthesis: SynthesisInput): Promise<void> {
-  const d = await getDb();
-  d.run(
+export function saveSynthesis(synthesis: SynthesisInput): void {
+  const d = getDb();
+  d.prepare(
     `INSERT OR REPLACE INTO syntheses
       (date, time_slot, content_fr, content_en, articles_count, cves_count, critical_count)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [
-      synthesis.date,
-      synthesis.time_slot,
-      synthesis.content_fr ?? null,
-      synthesis.content_en ?? null,
-      synthesis.articles_count ?? null,
-      synthesis.cves_count ?? null,
-      synthesis.critical_count ?? null,
-    ]
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    synthesis.date,
+    synthesis.time_slot,
+    synthesis.content_fr ?? null,
+    synthesis.content_en ?? null,
+    synthesis.articles_count ?? null,
+    synthesis.cves_count ?? null,
+    synthesis.critical_count ?? null,
   );
-  saveToDisk();
 }
 
-export async function getSyntheses(limit: number = 10): Promise<SynthesisRow[]> {
-  const d = await getDb();
-  const stmt = d.prepare(
+export function getSyntheses(limit: number = 10): SynthesisRow[] {
+  const d = getDb();
+  return d.prepare(
     `SELECT * FROM syntheses ORDER BY date DESC, time_slot DESC LIMIT ?`
-  );
-  stmt.bind([limit]);
-
-  const rows: SynthesisRow[] = [];
-  while (stmt.step()) {
-    rows.push(stmt.getAsObject() as unknown as SynthesisRow);
-  }
-  stmt.free();
-  return rows;
+  ).all(limit) as SynthesisRow[];
 }
 
-export async function getLatestSynthesis(): Promise<SynthesisRow | null> {
-  const rows = await getSyntheses(1);
+export function getLatestSynthesis(): SynthesisRow | null {
+  const rows = getSyntheses(1);
   return rows.length > 0 ? rows[0] : null;
 }
 
@@ -419,26 +473,24 @@ export interface AlertFilters {
   offset?: number;
 }
 
-export async function saveAlert(alert: AlertInput): Promise<void> {
-  const d = await getDb();
-  d.run(
+export function saveAlert(alert: AlertInput): void {
+  const d = getDb();
+  d.prepare(
     `INSERT INTO alerts
       (type, title, title_fr, description, severity, source_link)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [
-      alert.type,
-      alert.title,
-      alert.title_fr ?? null,
-      alert.description ?? null,
-      alert.severity,
-      alert.source_link ?? null,
-    ]
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(
+    alert.type,
+    alert.title,
+    alert.title_fr ?? null,
+    alert.description ?? null,
+    alert.severity,
+    alert.source_link ?? null,
   );
-  saveToDisk();
 }
 
-export async function getAlerts(filters: AlertFilters = {}): Promise<AlertRow[]> {
-  const d = await getDb();
+export function getAlerts(filters: AlertFilters = {}): AlertRow[] {
+  const d = getDb();
   const conditions: string[] = [];
   const params: unknown[] = [];
 
@@ -463,42 +515,29 @@ export async function getAlerts(filters: AlertFilters = {}): Promise<AlertRow[]>
   const limit = filters.limit ?? 100;
   const offset = filters.offset ?? 0;
 
-  const stmt = d.prepare(
+  return d.prepare(
     `SELECT * FROM alerts ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
-  );
-  stmt.bind([...params, limit, offset]);
-
-  const rows: AlertRow[] = [];
-  while (stmt.step()) {
-    rows.push(stmt.getAsObject() as unknown as AlertRow);
-  }
-  stmt.free();
-  return rows;
+  ).all(...params, limit, offset) as AlertRow[];
 }
 
-export async function acknowledgeAlert(id: number): Promise<void> {
-  const d = await getDb();
-  d.run("UPDATE alerts SET acknowledged = 1 WHERE id = ?", [id]);
-  saveToDisk();
+export function acknowledgeAlert(id: number): void {
+  const d = getDb();
+  d.prepare("UPDATE alerts SET acknowledged = 1 WHERE id = ?").run(id);
 }
 
 // ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
 
-export async function getSetting(key: string): Promise<string | null> {
-  const d = await getDb();
-  const result = d.exec("SELECT value FROM settings WHERE key = ?", [key]);
-  if (result.length > 0 && result[0].values.length > 0) {
-    return result[0].values[0][0] as string | null;
-  }
-  return null;
+export function getSetting(key: string): string | null {
+  const d = getDb();
+  const row = d.prepare("SELECT value FROM settings WHERE key = ?").get(key) as { value: string | null } | undefined;
+  return row?.value ?? null;
 }
 
-export async function setSetting(key: string, value: string): Promise<void> {
-  const d = await getDb();
-  d.run("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [key, value]);
-  saveToDisk();
+export function setSetting(key: string, value: string): void {
+  const d = getDb();
+  d.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, value);
 }
 
 // ---------------------------------------------------------------------------
@@ -526,74 +565,59 @@ export interface DashboardStats {
 }
 
 function countQuery(
-  d: Database,
+  d: Database.Database,
   table: string,
   dateCol: string,
   extraWhere?: string
 ): { last24h: number; last7d: number; last30d: number; total: number } {
   const extra = extraWhere ? ` AND ${extraWhere}` : "";
-  const q = (interval: string) =>
-    d.exec(
-      `SELECT COUNT(*) FROM ${table} WHERE ${dateCol} >= datetime('now', '${interval}')${extra}`
-    );
-  const qTotal = d.exec(`SELECT COUNT(*) FROM ${table} ${extraWhere ? `WHERE ${extraWhere}` : ""}`);
-
-  const extract = (r: ReturnType<Database["exec"]>) =>
-    r.length > 0 ? (r[0].values[0][0] as number) : 0;
+  const q = (interval: string) => {
+    const row = d.prepare(
+      `SELECT COUNT(*) as count FROM ${table} WHERE ${dateCol} >= datetime('now', '${interval}')${extra}`
+    ).get() as { count: number };
+    return row.count;
+  };
+  const totalRow = d.prepare(
+    `SELECT COUNT(*) as count FROM ${table} ${extraWhere ? `WHERE ${extraWhere}` : ""}`
+  ).get() as { count: number };
 
   return {
-    last24h: extract(q("-1 day")),
-    last7d: extract(q("-7 days")),
-    last30d: extract(q("-30 days")),
-    total: extract(qTotal),
+    last24h: q("-1 day"),
+    last7d: q("-7 days"),
+    last30d: q("-30 days"),
+    total: totalRow.count,
   };
 }
 
-export async function getStats(): Promise<DashboardStats> {
-  const d = await getDb();
+export function getStats(): DashboardStats {
+  const d = getDb();
 
   const articles = countQuery(d, "articles", "collected_at");
   const cves = countQuery(d, "cves", "collected_at");
   const alertsAll = countQuery(d, "alerts", "created_at");
   const critical = countQuery(d, "alerts", "created_at", "severity = 'critical'");
 
-  const unackResult = d.exec(
-    "SELECT COUNT(*) FROM alerts WHERE acknowledged = 0"
-  );
-  const unacknowledged =
-    unackResult.length > 0 ? (unackResult[0].values[0][0] as number) : 0;
+  const unackRow = d.prepare(
+    "SELECT COUNT(*) as count FROM alerts WHERE acknowledged = 0"
+  ).get() as { count: number };
+  const unacknowledged = unackRow.count;
 
-  const synthesesResult = d.exec("SELECT COUNT(*) FROM syntheses");
-  const synthesesTotal =
-    synthesesResult.length > 0 ? (synthesesResult[0].values[0][0] as number) : 0;
+  const synthesesRow = d.prepare("SELECT COUNT(*) as count FROM syntheses").get() as { count: number };
+  const synthesesTotal = synthesesRow.count;
 
   // Top categories from last 7 days
-  const catResult = d.exec(
-    `SELECT category, COUNT(*) as cnt FROM articles
+  const topCategories = d.prepare(
+    `SELECT category, COUNT(*) as count FROM articles
      WHERE category IS NOT NULL AND collected_at >= datetime('now', '-7 days')
-     GROUP BY category ORDER BY cnt DESC LIMIT 10`
-  );
-  const topCategories =
-    catResult.length > 0
-      ? catResult[0].values.map((row) => ({
-          category: row[0] as string,
-          count: row[1] as number,
-        }))
-      : [];
+     GROUP BY category ORDER BY count DESC LIMIT 10`
+  ).all() as Array<{ category: string; count: number }>;
 
   // Top countries from last 7 days
-  const countryResult = d.exec(
-    `SELECT country, COUNT(*) as cnt FROM articles
+  const topCountries = d.prepare(
+    `SELECT country, COUNT(*) as count FROM articles
      WHERE country IS NOT NULL AND collected_at >= datetime('now', '-7 days')
-     GROUP BY country ORDER BY cnt DESC LIMIT 10`
-  );
-  const topCountries =
-    countryResult.length > 0
-      ? countryResult[0].values.map((row) => ({
-          country: row[0] as string,
-          count: row[1] as number,
-        }))
-      : [];
+     GROUP BY country ORDER BY count DESC LIMIT 10`
+  ).all() as Array<{ country: string; count: number }>;
 
   return {
     articles,
@@ -607,5 +631,46 @@ export async function getStats(): Promise<DashboardStats> {
     syntheses: { total: synthesesTotal },
     topCategories,
     topCountries,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Data purge (to keep memory and disk usage under control)
+// ---------------------------------------------------------------------------
+
+export interface PurgeStats {
+  articles: number;
+  cves: number;
+  alerts: number;
+}
+
+export function purgeOldData(
+  articleDays: number = 90,
+  cveDays: number = 180,
+  alertDays: number = 30
+): PurgeStats {
+  const d = getDb();
+
+  const artResult = d.prepare(
+    `DELETE FROM articles WHERE collected_at < datetime('now', ?)`
+  ).run(`-${articleDays} days`);
+
+  const cveResult = d.prepare(
+    `DELETE FROM cves WHERE collected_at < datetime('now', ?)`
+  ).run(`-${cveDays} days`);
+
+  const alertResult = d.prepare(
+    `DELETE FROM alerts WHERE acknowledged = 1 AND created_at < datetime('now', ?)`
+  ).run(`-${alertDays} days`);
+
+  // Reclaim disk space after large deletes
+  if (artResult.changes + cveResult.changes + alertResult.changes > 100) {
+    d.pragma("wal_checkpoint(TRUNCATE)");
+  }
+
+  return {
+    articles: artResult.changes,
+    cves: cveResult.changes,
+    alerts: alertResult.changes,
   };
 }

@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmd.exe /c \"where node\")",
+      "Bash(cmd.exe /c \"where npm\")",
+      "Bash(export PATH=\"/c/Program Files/nodejs:$PATH\")",
+      "Bash(npm --version)",
+      "Bash(git --version)",
+      "Bash(git init:*)",
+      "Bash(git remote:*)",
+      "Bash(npx --yes create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --use-npm)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(node_modules/.bin/tsc --noEmit --pretty)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(wc -l /e/Cybervisor/src/app/dashboard/page.tsx /e/Cybervisor/src/components/charts/*.tsx /e/Cybervisor/src/components/feeds/*.tsx)",
+      "Bash(git branch:*)",
+      "Bash(git push:*)"
+    ]
+  }
+}

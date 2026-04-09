@@ -1,6 +1,7 @@
 import cron, { type ScheduledTask } from "node-cron";
 import { collectAllFeeds } from "./feedCollector";
 import { collectRecentCves } from "./cveCollector";
+import { purgeOldData } from "../db";
 
 // ---------------------------------------------------------------------------
 // State
@@ -8,7 +9,12 @@ import { collectRecentCves } from "./cveCollector";
 
 let feedTask: ScheduledTask | null = null;
 let cveTask: ScheduledTask | null = null;
+let purgeTask: ScheduledTask | null = null;
 let running = false;
+
+// Mutex flags to prevent overlapping runs
+let feedRunning = false;
+let cveRunning = false;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -19,6 +25,11 @@ function timestamp(): string {
 }
 
 async function runFeedCollection(): Promise<void> {
+  if (feedRunning) {
+    console.log(`[${timestamp()}] [Scheduler] Feed collection skipped (previous run still active)`);
+    return;
+  }
+  feedRunning = true;
   console.log(`[${timestamp()}] [Scheduler] Starting feed collection...`);
   const start = Date.now();
 
@@ -42,10 +53,17 @@ async function runFeedCollection(): Promise<void> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[${timestamp()}] [Scheduler] Feed collection failed: ${msg}`);
+  } finally {
+    feedRunning = false;
   }
 }
 
 async function runCveCollection(): Promise<void> {
+  if (cveRunning) {
+    console.log(`[${timestamp()}] [Scheduler] CVE collection skipped (previous run still active)`);
+    return;
+  }
+  cveRunning = true;
   console.log(`[${timestamp()}] [Scheduler] Starting CVE collection...`);
   const start = Date.now();
 
@@ -59,6 +77,22 @@ async function runCveCollection(): Promise<void> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[${timestamp()}] [Scheduler] CVE collection failed: ${msg}`);
+  } finally {
+    cveRunning = false;
+  }
+}
+
+function runPurge(): void {
+  console.log(`[${timestamp()}] [Scheduler] Running data purge...`);
+  try {
+    const stats = purgeOldData(90, 180, 30);
+    console.log(
+      `[${timestamp()}] [Scheduler] Purge complete ` +
+        `- Articles: ${stats.articles}, CVEs: ${stats.cves}, Alerts: ${stats.alerts}`
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[${timestamp()}] [Scheduler] Purge failed: ${msg}`);
   }
 }
 
@@ -73,11 +107,12 @@ export function startScheduler(): void {
   }
 
   console.log(`[${timestamp()}] [Scheduler] Starting scheduler...`);
-  console.log(`[${timestamp()}] [Scheduler]   Feed collection: every 5 minutes`);
+  console.log(`[${timestamp()}] [Scheduler]   Feed collection: every 15 minutes`);
   console.log(`[${timestamp()}] [Scheduler]   CVE collection:  every 30 minutes`);
+  console.log(`[${timestamp()}] [Scheduler]   Data purge:      daily at 03:00`);
 
-  // Schedule feed collection every 5 minutes
-  feedTask = cron.schedule("*/5 * * * *", () => {
+  // Schedule feed collection every 15 minutes (was 5min, reduced for RAM)
+  feedTask = cron.schedule("*/15 * * * *", () => {
     void runFeedCollection();
   });
 
@@ -86,12 +121,19 @@ export function startScheduler(): void {
     void runCveCollection();
   });
 
+  // Schedule daily data purge at 03:00 to clean old records
+  purgeTask = cron.schedule("0 3 * * *", () => {
+    runPurge();
+  });
+
   running = true;
 
-  // Run both immediately on start
-  console.log(`[${timestamp()}] [Scheduler] Running initial collection...`);
-  void runFeedCollection();
-  void runCveCollection();
+  // Run initial collection after a short delay (let Next.js boot first)
+  setTimeout(() => {
+    console.log(`[${timestamp()}] [Scheduler] Running initial collection...`);
+    void runFeedCollection();
+    void runCveCollection();
+  }, 5000);
 }
 
 export function stopScheduler(): void {
@@ -110,6 +152,11 @@ export function stopScheduler(): void {
   if (cveTask) {
     cveTask.stop();
     cveTask = null;
+  }
+
+  if (purgeTask) {
+    purgeTask.stop();
+    purgeTask = null;
   }
 
   running = false;
