@@ -1,0 +1,134 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ------------------------------------------------------------------ */
+/* Base layer: resets & global defaults                                */
+/* ------------------------------------------------------------------ */
+
+@layer base {
+  /* Smooth theme transitions on all color-related properties */
+  *,
+  *::before,
+  *::after {
+    transition-property: background-color, border-color, color, fill, stroke,
+      box-shadow;
+    transition-duration: 200ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* Prevent layout shift from transition on elements that animate transform */
+  [class*='animate-'] *,
+  [class*='animate-'] {
+    transition-property: none;
+  }
+
+  html {
+    @apply scroll-smooth antialiased;
+  }
+
+  body {
+    @apply text-gray-900 dark:text-gray-100;
+  }
+
+  /* Custom scrollbar — thin, cyber-colored */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.cyber.600') transparent;
+  }
+
+  *::-webkit-scrollbar {
+    @apply w-1.5 h-1.5;
+  }
+
+  *::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-cyber-600/50;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    @apply bg-cyber-500;
+  }
+
+  .dark *::-webkit-scrollbar-thumb {
+    @apply bg-cyber-700/60;
+  }
+
+  .dark *::-webkit-scrollbar-thumb:hover {
+    @apply bg-cyber-500/70;
+  }
+
+  /* Focus ring utility */
+  :focus-visible {
+    @apply outline-none ring-2 ring-cyber-500/50 ring-offset-2 ring-offset-white dark:ring-offset-gray-950;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Component layer: reusable patterns                                  */
+/* ------------------------------------------------------------------ */
+
+@layer components {
+  /* Glass-morphism panel */
+  .glass-panel {
+    @apply rounded-xl border border-white/10 bg-white/80 shadow-lg backdrop-blur-md
+      dark:border-gray-700/50 dark:bg-gray-900/80;
+  }
+
+  /* Cyber gradient text */
+  .cyber-gradient-text {
+    @apply bg-gradient-to-r from-cyber-400 to-cyber-600 bg-clip-text text-transparent;
+  }
+
+  /* Active nav indicator */
+  .nav-active {
+    @apply bg-cyber-500/10 text-cyber-600 dark:bg-cyber-500/15 dark:text-cyber-400;
+  }
+
+  /* Sidebar link base */
+  .nav-link {
+    @apply flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium
+      text-gray-600 transition-colors
+      hover:bg-gray-100 hover:text-gray-900
+      dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100;
+  }
+
+  .nav-link.nav-active {
+    @apply bg-cyber-500/10 text-cyber-600
+      dark:bg-cyber-500/15 dark:text-cyber-400;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Utility layer: one-off helpers                                      */
+/* ------------------------------------------------------------------ */
+
+@layer utilities {
+  /* Hide scrollbar but keep scrolling */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Fade-in helper for page transitions */
+  .animate-page-in {
+    animation: pageIn 0.3s ease-out;
+  }
+
+  @keyframes pageIn {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
