@@ -142,7 +142,19 @@ function useDashboardData() {
       const articlesJson = await articlesRes.json();
       const cvesJson = await cvesRes.json();
 
-      const stats: DashboardStats = statsJson;
+      // Defensive: if stats API returned an error, use defaults
+      const defaultCounts = { last24h: 0, last7d: 0, last30d: 0, total: 0 };
+      const stats: DashboardStats = statsJson?.articles
+        ? statsJson
+        : {
+            articles: defaultCounts,
+            cves: defaultCounts,
+            alerts: { ...defaultCounts, unacknowledged: 0 },
+            critical: { last24h: 0, last7d: 0, last30d: 0 },
+            syntheses: { total: 0 },
+            topCategories: [],
+            topCountries: [],
+          };
       const alerts: AlertRow[] = alertsJson.alerts ?? [];
       const syntheses: SynthesisRow[] = synthesisJson.syntheses ?? [];
       const synthesis = syntheses[0] ?? null;

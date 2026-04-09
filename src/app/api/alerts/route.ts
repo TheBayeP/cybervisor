@@ -8,6 +8,8 @@ export async function GET(request: NextRequest) {
     const severity = searchParams.get("severity") ?? undefined;
     const acknowledgedParam = searchParams.get("acknowledged");
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") ?? "50", 10) || 50));
+    const since = searchParams.get("since") ?? undefined;
+    const sort = searchParams.get("sort") ?? undefined;
 
     // Validate severity
     const validSeverities = ["critical", "high", "medium", "low"];
@@ -36,6 +38,8 @@ export async function GET(request: NextRequest) {
     const filters: AlertFilters = {
       severity,
       acknowledged,
+      since,
+      sort,
       limit,
     };
 

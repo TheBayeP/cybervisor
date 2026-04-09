@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useLanguage } from '@/lib/i18n';
 import { Button, SeverityBadge } from '@/components/ui';
+import { TimePeriodFilter, getStartDateFromPeriod, type TimePeriod, type SortOption } from '@/components/feeds/TimePeriodFilter';
 import { AlertTriangle, CheckCircle, Bell, RefreshCw, Shield, Bug, Zap } from 'lucide-react';
 import { cn, formatDate, timeAgo } from '@/lib/utils';
 
@@ -29,13 +30,18 @@ export default function AlertsPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'new' | 'acknowledged'>('all');
+  const [period, setPeriod] = useState<TimePeriod>('all');
+  const [sortBy, setSortBy] = useState<SortOption>('date_desc');
 
-  const fetchAlerts = async () => {
+  const fetchAlerts = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({ limit: '100' });
       if (filter === 'new') params.set('acknowledged', 'false');
       if (filter === 'acknowledged') params.set('acknowledged', 'true');
+      const startDate = getStartDateFromPeriod(period);
+      if (startDate) params.set('since', startDate);
+      params.set('sort', sortBy);
 
       const res = await fetch(`/api/alerts?${params}`);
       const data = await res.json();
@@ -45,9 +51,9 @@ export default function AlertsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filter, period, sortBy]);
 
-  useEffect(() => { fetchAlerts(); }, [filter]);
+  useEffect(() => { fetchAlerts(); }, [fetchAlerts]);
 
   const acknowledge = async (id: number) => {
     try {
@@ -116,6 +122,9 @@ export default function AlertsPage() {
           </button>
         ))}
       </div>
+
+      {/* Time Period & Sort */}
+      <TimePeriodFilter period={period} setPeriod={setPeriod} sortBy={sortBy} setSortBy={setSortBy} />
 
       {/* Alerts List */}
       {loading ? (

@@ -150,6 +150,7 @@ export interface ArticleFilters {
   limit?: number;
   offset?: number;
   search?: string;
+  sort?: string; // e.g. 'date_desc', 'date_asc', 'severity_desc', 'severity_asc'
 }
 
 export function saveArticle(article: ArticleInput): void {
@@ -254,8 +255,14 @@ export function getArticles(filters: ArticleFilters = {}): ArticleRow[] {
   const limit = filters.limit ?? 100;
   const offset = filters.offset ?? 0;
 
+  // Sort
+  let orderBy = "collected_at DESC";
+  if (filters.sort === "date_asc") orderBy = "collected_at ASC";
+  else if (filters.sort === "severity_desc") orderBy = "CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END ASC";
+  else if (filters.sort === "severity_asc") orderBy = "CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END DESC";
+
   const stmt = d.prepare(
-    `SELECT * FROM articles ${where} ORDER BY collected_at DESC LIMIT ? OFFSET ?`
+    `SELECT * FROM articles ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`
   );
   return stmt.all(...params, limit, offset) as ArticleRow[];
 }
@@ -319,6 +326,7 @@ export interface CveFilters {
   search?: string;
   limit?: number;
   offset?: number;
+  sort?: string; // e.g. 'date_desc', 'date_asc', 'severity_desc', 'severity_asc'
 }
 
 export function saveCve(cve: CveInput): void {
@@ -368,8 +376,14 @@ export function getCves(filters: CveFilters = {}): CveRow[] {
   const limit = filters.limit ?? 100;
   const offset = filters.offset ?? 0;
 
+  // Sort
+  let orderBy = "collected_at DESC";
+  if (filters.sort === "date_asc") orderBy = "collected_at ASC";
+  else if (filters.sort === "severity_desc") orderBy = "CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END ASC, cvss_score DESC";
+  else if (filters.sort === "severity_asc") orderBy = "CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END DESC, cvss_score ASC";
+
   return d.prepare(
-    `SELECT * FROM cves ${where} ORDER BY collected_at DESC LIMIT ? OFFSET ?`
+    `SELECT * FROM cves ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`
   ).all(...params, limit, offset) as CveRow[];
 }
 
@@ -471,6 +485,7 @@ export interface AlertFilters {
   since?: string;
   limit?: number;
   offset?: number;
+  sort?: string;
 }
 
 export function saveAlert(alert: AlertInput): void {
@@ -515,8 +530,14 @@ export function getAlerts(filters: AlertFilters = {}): AlertRow[] {
   const limit = filters.limit ?? 100;
   const offset = filters.offset ?? 0;
 
+  // Sort
+  let orderBy = "created_at DESC";
+  if (filters.sort === "date_asc") orderBy = "created_at ASC";
+  else if (filters.sort === "severity_desc") orderBy = "CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END ASC";
+  else if (filters.sort === "severity_asc") orderBy = "CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END DESC";
+
   return d.prepare(
-    `SELECT * FROM alerts ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
+    `SELECT * FROM alerts ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`
   ).all(...params, limit, offset) as AlertRow[];
 }
 

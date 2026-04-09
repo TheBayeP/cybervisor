@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get("search") ?? undefined;
     const startDate = searchParams.get("startDate") ?? undefined;
     const endDate = searchParams.get("endDate") ?? undefined;
+    const sort = searchParams.get("sort") ?? undefined;
 
     // Validate severity if provided
     const validSeverities = ["critical", "high", "medium", "low"];
@@ -33,6 +34,7 @@ export async function GET(request: NextRequest) {
       country,
       search,
       since: startDate,
+      sort,
       limit,
       offset,
     };

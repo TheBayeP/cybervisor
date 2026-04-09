@@ -13,6 +13,8 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get("search") ?? undefined;
     const minScoreStr = searchParams.get("minScore");
     const maxScoreStr = searchParams.get("maxScore");
+    const startDate = searchParams.get("startDate") ?? undefined;
+    const sort = searchParams.get("sort") ?? undefined;
 
     // Validate severity
     const validSeverities = ["critical", "high", "medium", "low"];
@@ -44,6 +46,8 @@ export async function GET(request: NextRequest) {
       severity,
       search,
       min_cvss: minScore,
+      since: startDate,
+      sort,
       limit,
       offset,
     };
