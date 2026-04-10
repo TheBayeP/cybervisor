@@ -293,7 +293,12 @@ export default function WatchPage() {
                     <h3 className="text-sm font-semibold text-gray-900 dark:text-white line-clamp-2 group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors leading-snug">
                       {articleTitle(a)}
                     </h3>
-                    <div className="flex items-center justify-between mt-auto">
+                    {articleDesc(a) && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 leading-relaxed">
+                        {truncate(articleDesc(a), 150)}
+                      </p>
+                    )}
+                    <div className="flex items-center justify-between mt-auto pt-1 border-t border-gray-100 dark:border-gray-800">
                       <span className="text-xs text-violet-600 dark:text-violet-400 font-medium truncate">{sourceName(a.source_id)}</span>
                       <ExternalLink className="w-3 h-3 text-gray-300 group-hover:text-violet-500 transition-colors shrink-0" />
                     </div>

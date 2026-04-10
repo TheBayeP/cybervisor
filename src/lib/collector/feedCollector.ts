@@ -148,7 +148,19 @@ async function fetchAndSaveFeed(source: Source): Promise<SingleFeedResult> {
       const category = detectCategory(combinedText) ?? source.category;
       const severity = detectSeverity(combinedText) ?? null;
 
-      const pubDate = item.pubDate || item.isoDate || null;
+      // Always store dates as ISO 8601 (YYYY-MM-DDTHH:mm:ssZ) so SQLite
+      // can sort them correctly as strings. item.pubDate is RFC 2822 format
+      // ("Thu, 10 Apr 2026 ...") which breaks alphabetical sorting.
+      // item.isoDate is already ISO 8601 when available — prefer it.
+      let pubDate: string | null = null;
+      if (item.isoDate) {
+        pubDate = item.isoDate; // already ISO 8601
+      } else if (item.pubDate) {
+        const parsed = new Date(item.pubDate);
+        if (!isNaN(parsed.getTime())) {
+          pubDate = parsed.toISOString();
+        }
+      }
 
       articles.push({
         source_id: source.id,
