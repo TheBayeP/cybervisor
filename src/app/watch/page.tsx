@@ -1,35 +1,85 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useLanguage } from '@/lib/i18n';
-import { SeverityBadge } from '@/components/ui';
 import { TimePeriodFilter, getStartDateFromPeriod, type TimePeriod, type SortOption } from '@/components/feeds/TimePeriodFilter';
-import { Shield, Bug, AlertTriangle, Newspaper, ExternalLink, RefreshCw, ChevronDown, Eye } from 'lucide-react';
-import { cn, timeAgo } from '@/lib/utils';
+import {
+  ExternalLink, RefreshCw, Clock, Search,
+  FlaskConical, Microscope, Shield, Cpu, Bug, Target, Zap, BookOpen,
+} from 'lucide-react';
+import { cn, timeAgo, truncate } from '@/lib/utils';
+import { sources } from '@/lib/sources';
+import { Button } from '@/components/ui';
+
+// ---------------------------------------------------------------------------
+// Source selection — elite research & threat-intel sources
+// ---------------------------------------------------------------------------
+
+const WATCH_SOURCE_IDS = sources
+  .filter((s) =>
+    s.category === 'research' ||
+    (s.category === 'vendor' && (
+      s.tags.includes('research') ||
+      s.tags.includes('zero-day') ||
+      s.tags.includes('apt') ||
+      [
+        'google-project-zero', 'paloalto-unit42', 'cisco-talos', 'mandiant-blog',
+        'crowdstrike-blog', 'sentinelone-labs', 'elastic-security', 'kaspersky-securelist',
+        'eset-welivesecurity', 'checkpoint-research', 'sekoia-blog', 'orangecyberdefense',
+        'harfanglab-blog', 'symantec-threat', 'trendmicro-research', 'microsoft-security',
+        'microsoft-msrc', 'google-threat', 'malwarebytes-labs',
+      ].includes(s.id)
+    )) ||
+    (s.category === 'blog' && [
+      'krebs-on-security', 'schneier-security', 'sans-isc', 'korben',
+      'nakedsecurity-sophos', 'graham-cluley',
+    ].includes(s.id)) ||
+    (s.category === 'threat-intel' && [
+      'mitre-attack-blog', 'alienvault-otx', 'recorded-future', 'virustotal-blog',
+      'any-run-blog', 'socradar-blog', 'greynoise-blog', 'trellix-blog',
+    ].includes(s.id))
+  )
+  .map((s) => s.id);
+
+// ---------------------------------------------------------------------------
+// Theme tags for categorization display
+// ---------------------------------------------------------------------------
+
+const THEME_TAGS: { label_fr: string; label_en: string; keywords: string[]; icon: React.ComponentType<{className?:string}>; color: string }[] = [
+  { label_fr: 'APT / Nation-State', label_en: 'APT / Nation-State', keywords: ['apt', 'nation-state', 'nation state', 'espionnage', 'state-sponsored'], icon: Target, color: 'text-red-500' },
+  { label_fr: 'Malware / Ransomware', label_en: 'Malware / Ransomware', keywords: ['malware', 'ransomware', 'trojan', 'backdoor', 'botnet'], icon: Bug, color: 'text-orange-500' },
+  { label_fr: 'Zero-Day / Exploit', label_en: 'Zero-Day / Exploit', keywords: ['zero-day', 'zero day', '0day', 'exploit', 'poc', 'rce', 'lpe'], icon: Zap, color: 'text-yellow-500' },
+  { label_fr: 'Outil / Technique', label_en: 'Tool / Technique', keywords: ['tool', 'framework', 'outil', 'technique', 'method', 'bypass', 'evasion'], icon: Cpu, color: 'text-purple-500' },
+  { label_fr: 'Recherche', label_en: 'Research', keywords: ['research', 'analyse', 'analysis', 'paper', 'étude', 'study', 'whitepaper'], icon: FlaskConical, color: 'text-blue-500' },
+  { label_fr: 'Défense / Blue Team', label_en: 'Defense / Blue Team', keywords: ['defense', 'detection', 'hunting', 'siem', 'edr', 'monitoring', 'yara'], icon: Shield, color: 'text-green-500' },
+];
+
+function detectTheme(title: string, desc: string) {
+  const text = (title + ' ' + desc).toLowerCase();
+  for (const theme of THEME_TAGS) {
+    if (theme.keywords.some((kw) => text.includes(kw))) return theme;
+  }
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-interface WatchEvent {
+interface Article {
   id: number;
-  type: 'article' | 'cve' | 'alert';
+  source_id: string;
   title: string;
-  description?: string;
-  severity?: string;
-  link?: string;
-  source_id?: string;
-  category?: string;
-  cve_id?: string;
-  cvss_score?: number;
-  date: string;
-}
-
-interface DayGroup {
-  date: string;
-  label: string;
-  events: WatchEvent[];
-  stats: { articles: number; cves: number; alerts: number; critical: number };
+  title_fr?: string | null;
+  title_en?: string | null;
+  description?: string | null;
+  description_fr?: string | null;
+  description_en?: string | null;
+  link: string;
+  pub_date?: string | null;
+  category?: string | null;
+  severity?: string | null;
+  collected_at: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -37,259 +87,232 @@ interface DayGroup {
 // ---------------------------------------------------------------------------
 
 export default function WatchPage() {
-  const { t, lang } = useLanguage();
-  const [events, setEvents] = useState<WatchEvent[]>([]);
+  const { lang } = useLanguage();
+
+  const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [period, setPeriod] = useState<TimePeriod>('7d');
   const [sortBy, setSortBy] = useState<SortOption>('date_desc');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'article' | 'cve' | 'alert'>('all');
+  const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const observerRef = useRef<HTMLDivElement>(null);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
 
-  const fetchEvents = useCallback(async (pageNum: number, append: boolean = false) => {
-    if (pageNum === 1) setLoading(true);
-    else setLoadingMore(true);
-
+  const fetchArticles = useCallback(async () => {
+    setLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(pageNum), limit: '50' });
+      const params = new URLSearchParams({ page: String(page), limit: '24', sort: sortBy });
+      params.set('sourceIds', WATCH_SOURCE_IDS.join(','));
       const startDate = getStartDateFromPeriod(period);
       if (startDate) params.set('startDate', startDate);
-      params.set('sort', sortBy);
-      if (typeFilter !== 'all') params.set('type', typeFilter);
+      if (search) params.set('search', search);
 
-      const res = await fetch(`/api/watch?${params}`);
+      const res = await fetch(`/api/articles?${params}`);
       const data = await res.json();
-      const newEvents = data.events || [];
-
-      if (append) {
-        setEvents(prev => [...prev, ...newEvents]);
-      } else {
-        setEvents(newEvents);
-      }
-      setHasMore(newEvents.length === 50);
+      setArticles(data.articles || []);
+      setTotalPages(data.totalPages || 1);
+      setTotal(data.total || 0);
     } catch (e) {
-      console.error('Failed to fetch watch events:', e);
+      console.error('Failed to fetch watch articles:', e);
     } finally {
       setLoading(false);
-      setLoadingMore(false);
     }
-  }, [period, sortBy, typeFilter]);
+  }, [period, sortBy, search, page]);
 
-  useEffect(() => {
-    setPage(1);
-    fetchEvents(1);
-  }, [fetchEvents]);
+  useEffect(() => { fetchArticles(); }, [fetchArticles]);
+  useEffect(() => { setPage(1); }, [period, sortBy, search]);
 
-  const loadMore = () => {
-    if (loadingMore || !hasMore) return;
-    const nextPage = page + 1;
-    setPage(nextPage);
-    fetchEvents(nextPage, true);
-  };
+  const sourceName = (id: string) => sources.find((s) => s.id === id)?.name ?? id;
+  const articleTitle = (a: Article) => (lang === 'fr' ? a.title_fr : a.title_en) ?? a.title_fr ?? a.title_en ?? '';
+  const articleDesc = (a: Article) => (lang === 'fr' ? a.description_fr : a.description_en) ?? a.description ?? '';
+  const articleDate = (a: Article) => a.pub_date || a.collected_at;
 
-  // Group events by day
-  const dayGroups: DayGroup[] = (() => {
-    const groups = new Map<string, DayGroup>();
-
-    for (const event of events) {
-      const d = new Date(event.date);
-      const dateKey = d.toISOString().split('T')[0];
-
-      if (!groups.has(dateKey)) {
-        const today = new Date().toISOString().split('T')[0];
-        const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-        let label: string;
-        if (dateKey === today) label = lang === 'fr' ? 'Aujourd\'hui' : 'Today';
-        else if (dateKey === yesterday) label = lang === 'fr' ? 'Hier' : 'Yesterday';
-        else label = d.toLocaleDateString(lang === 'fr' ? 'fr-FR' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long' });
-
-        groups.set(dateKey, { date: dateKey, label, events: [], stats: { articles: 0, cves: 0, alerts: 0, critical: 0 } });
-      }
-
-      const group = groups.get(dateKey)!;
-      group.events.push(event);
-      if (event.type === 'article') group.stats.articles++;
-      else if (event.type === 'cve') group.stats.cves++;
-      else if (event.type === 'alert') group.stats.alerts++;
-      if (event.severity === 'critical') group.stats.critical++;
-    }
-
-    return Array.from(groups.values()).sort((a, b) =>
-      sortBy === 'date_asc' ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date)
-    );
-  })();
-
-  const TYPE_ICONS = { article: Newspaper, cve: Bug, alert: AlertTriangle };
-  const TYPE_COLORS = {
-    article: 'text-blue-500 bg-blue-100 dark:bg-blue-900/30',
-    cve: 'text-orange-500 bg-orange-100 dark:bg-orange-900/30',
-    alert: 'text-red-500 bg-red-100 dark:bg-red-900/30',
-  };
+  // Separate featured (top 3 with theme) from grid
+  const featured = articles.slice(0, 3);
+  const grid = articles.slice(3);
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            {lang === 'fr' ? 'Veille Cyber' : 'Cyber Watch'}
-          </h1>
+          <div className="flex items-center gap-2">
+            <Microscope className="w-6 h-6 text-violet-500" />
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+              {lang === 'fr' ? 'Veille Cyber' : 'Cyber Watch'}
+            </h1>
+          </div>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            {lang === 'fr' ? 'Timeline unifiée des événements cybersécurité' : 'Unified cybersecurity event timeline'}
+            {lang === 'fr'
+              ? `Publications remarquables : chercheurs, labs, threat intel — ${total} articles`
+              : `Notable publications: researchers, labs, threat intel — ${total} articles`}
           </p>
         </div>
-        <button
-          onClick={() => { setPage(1); fetchEvents(1); }}
-          className="p-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-        >
-          <RefreshCw className={cn('w-4 h-4 text-gray-500', loading && 'animate-spin')} />
-        </button>
+        <Button variant="outline" onClick={() => { setPage(1); fetchArticles(); }}>
+          <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
+        </Button>
       </div>
 
-      {/* Type filter pills */}
-      <div className="flex flex-wrap gap-2">
-        {(['all', 'article', 'cve', 'alert'] as const).map(type => (
-          <button
-            key={type}
-            onClick={() => setTypeFilter(type)}
-            className={cn(
-              'flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
-              typeFilter === type
-                ? 'bg-cyber-500 text-white'
-                : 'bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-800'
-            )}
-          >
-            {type === 'all' ? (
-              <Eye className="w-3.5 h-3.5" />
-            ) : (
-              (() => { const Icon = TYPE_ICONS[type]; return <Icon className="w-3.5 h-3.5" />; })()
-            )}
-            {type === 'all' ? (lang === 'fr' ? 'Tout' : 'All') :
-             type === 'article' ? 'Articles' :
-             type === 'cve' ? 'CVEs' :
-             (lang === 'fr' ? 'Alertes' : 'Alerts')}
-          </button>
-        ))}
+      {/* Source legend */}
+      <div className="flex flex-wrap gap-1.5">
+        {THEME_TAGS.map((t) => {
+          const Icon = t.icon;
+          return (
+            <span key={t.label_en} className="flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
+              <Icon className={cn('w-3 h-3', t.color)} />
+              {lang === 'fr' ? t.label_fr : t.label_en}
+            </span>
+          );
+        })}
+      </div>
+
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={lang === 'fr' ? 'Rechercher APT, technique, outil...' : 'Search APT, technique, tool...'}
+          className={cn(
+            'w-full pl-10 pr-4 py-2.5 rounded-lg border text-sm transition-colors',
+            'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700',
+            'text-gray-900 dark:text-white placeholder-gray-400',
+            'focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent',
+          )}
+        />
       </div>
 
       {/* Period filter */}
       <TimePeriodFilter period={period} setPeriod={setPeriod} sortBy={sortBy} setSortBy={setSortBy} />
 
-      {/* Timeline */}
+      {/* Content */}
       {loading ? (
         <div className="space-y-4">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-24 rounded-xl bg-gray-100 dark:bg-gray-800 animate-pulse" />
-          ))}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-52 rounded-xl bg-gray-100 dark:bg-gray-800 animate-pulse" />
+            ))}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="h-28 rounded-xl bg-gray-100 dark:bg-gray-800 animate-pulse" />
+            ))}
+          </div>
         </div>
-      ) : events.length === 0 ? (
+      ) : articles.length === 0 ? (
         <div className="text-center py-20">
-          <Shield className="w-16 h-16 mx-auto text-gray-300 dark:text-gray-700 mb-4" />
-          <p className="text-gray-500 dark:text-gray-400 text-lg">
-            {lang === 'fr' ? 'Aucun événement trouvé' : 'No events found'}
+          <BookOpen className="w-14 h-14 mx-auto text-gray-300 dark:text-gray-700 mb-4" />
+          <p className="text-gray-500 dark:text-gray-400">
+            {lang === 'fr' ? 'Aucun article de recherche trouvé pour cette période.' : 'No research articles found for this period.'}
           </p>
         </div>
       ) : (
-        <div className="space-y-8">
-          {dayGroups.map(group => (
-            <div key={group.date}>
-              {/* Day header */}
-              <div className="flex items-center gap-4 mb-4">
-                <h2 className="text-lg font-bold text-gray-900 dark:text-white capitalize">{group.label}</h2>
-                <div className="flex-1 h-px bg-gray-200 dark:bg-gray-800" />
-                <div className="flex items-center gap-3 text-xs">
-                  <span className="flex items-center gap-1 text-blue-500">
-                    <Newspaper className="w-3 h-3" /> {group.stats.articles}
-                  </span>
-                  <span className="flex items-center gap-1 text-orange-500">
-                    <Bug className="w-3 h-3" /> {group.stats.cves}
-                  </span>
-                  <span className="flex items-center gap-1 text-red-500">
-                    <AlertTriangle className="w-3 h-3" /> {group.stats.alerts}
-                  </span>
-                  {group.stats.critical > 0 && (
-                    <span className="px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 font-bold">
-                      {group.stats.critical} {lang === 'fr' ? 'critiques' : 'critical'}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Events */}
-              <div className="relative pl-6 border-l-2 border-gray-200 dark:border-gray-800 space-y-3">
-                {group.events.map(event => {
-                  const Icon = TYPE_ICONS[event.type];
-                  const colorClass = TYPE_COLORS[event.type];
-
-                  return (
-                    <div key={`${event.type}-${event.id}`} className="relative">
-                      {/* Timeline dot */}
-                      <div className={cn('absolute -left-[31px] w-4 h-4 rounded-full border-2 border-white dark:border-gray-950', colorClass)} />
-
-                      <div className={cn(
-                        'rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-3',
-                        'hover:border-gray-300 dark:hover:border-gray-700 transition-all'
-                      )}>
-                        <div className="flex items-start gap-3">
-                          <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center shrink-0', colorClass)}>
-                            <Icon className="w-4 h-4" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h3 className="font-medium text-sm text-gray-900 dark:text-white">
-                                {event.cve_id ? `${event.cve_id}: ` : ''}{event.title}
-                              </h3>
-                              {event.severity && <SeverityBadge severity={event.severity as any} />}
-                              {event.cvss_score != null && (
-                                <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
-                                  CVSS {event.cvss_score}
-                                </span>
-                              )}
-                            </div>
-                            {event.description && (
-                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{event.description}</p>
-                            )}
-                            <div className="flex items-center gap-3 mt-2 text-[10px] text-gray-400">
-                              <span>{timeAgo(event.date, lang)}</span>
-                              {event.source_id && <span>{event.source_id}</span>}
-                              {event.category && (
-                                <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">{event.category}</span>
-                              )}
-                              {event.link && (
-                                <a href={event.link} target="_blank" rel="noopener noreferrer" className="text-cyber-500 hover:text-cyber-400 flex items-center gap-0.5">
-                                  <ExternalLink className="w-3 h-3" />
-                                  {lang === 'fr' ? 'Source' : 'Source'}
-                                </a>
-                              )}
-                            </div>
-                          </div>
-                        </div>
+        <div className="space-y-6">
+          {/* Featured cards — large */}
+          {featured.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {featured.map((a) => {
+                const theme = detectTheme(articleTitle(a), articleDesc(a));
+                const Icon = theme?.icon ?? BookOpen;
+                return (
+                  <a
+                    key={a.id}
+                    href={a.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={cn(
+                      'flex flex-col gap-3 p-5 rounded-xl border border-gray-200 dark:border-gray-800',
+                      'bg-white dark:bg-gray-900 hover:shadow-lg hover:border-violet-300 dark:hover:border-violet-700',
+                      'transition-all group cursor-pointer',
+                    )}
+                  >
+                    {/* Theme badge */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Icon className={cn('w-4 h-4', theme?.color ?? 'text-gray-400')} />
+                        <span className={cn('text-xs font-semibold', theme?.color ?? 'text-gray-400')}>
+                          {theme ? (lang === 'fr' ? theme.label_fr : theme.label_en) : 'Intel'}
+                        </span>
                       </div>
+                      <ExternalLink className="w-3.5 h-3.5 text-gray-300 group-hover:text-violet-500 transition-colors" />
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
 
-          {/* Load more */}
-          {hasMore && (
-            <div ref={observerRef} className="flex justify-center pt-4">
-              <button
-                onClick={loadMore}
-                disabled={loadingMore}
-                className={cn(
-                  'flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium transition-all',
-                  'bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800',
-                  'hover:border-gray-300 dark:hover:border-gray-700',
-                  'text-gray-600 dark:text-gray-400'
-                )}
-              >
-                {loadingMore ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ChevronDown className="w-4 h-4" />}
-                {lang === 'fr' ? 'Charger plus' : 'Load more'}
-              </button>
+                    {/* Title */}
+                    <h3 className="text-sm font-bold text-gray-900 dark:text-white line-clamp-3 group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors leading-snug">
+                      {articleTitle(a)}
+                    </h3>
+
+                    {/* Description */}
+                    {articleDesc(a) && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-3 leading-relaxed">
+                        {truncate(articleDesc(a), 180)}
+                      </p>
+                    )}
+
+                    {/* Footer */}
+                    <div className="flex items-center gap-2 mt-auto pt-2 border-t border-gray-100 dark:border-gray-800">
+                      <span className="text-xs font-medium text-violet-600 dark:text-violet-400 truncate">{sourceName(a.source_id)}</span>
+                      <span className="ml-auto flex items-center gap-1 text-[10px] text-gray-400 shrink-0">
+                        <Clock className="w-3 h-3" />{timeAgo(articleDate(a), lang)}
+                      </span>
+                    </div>
+                  </a>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Rest — compact grid */}
+          {grid.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {grid.map((a) => {
+                const theme = detectTheme(articleTitle(a), articleDesc(a));
+                const Icon = theme?.icon ?? BookOpen;
+                return (
+                  <a
+                    key={a.id}
+                    href={a.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={cn(
+                      'flex flex-col gap-2 p-4 rounded-xl border border-gray-200 dark:border-gray-800',
+                      'bg-white dark:bg-gray-900 hover:shadow-md hover:border-violet-300 dark:hover:border-violet-700',
+                      'transition-all group cursor-pointer',
+                    )}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <Icon className={cn('w-3.5 h-3.5 shrink-0', theme?.color ?? 'text-gray-400')} />
+                      <span className={cn('text-[10px] font-semibold uppercase tracking-wide', theme?.color ?? 'text-gray-400')}>
+                        {theme ? (lang === 'fr' ? theme.label_fr : theme.label_en) : 'Intel'}
+                      </span>
+                      <span className="ml-auto flex items-center gap-1 text-[10px] text-gray-400">
+                        <Clock className="w-2.5 h-2.5" />{timeAgo(articleDate(a), lang)}
+                      </span>
+                    </div>
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white line-clamp-2 group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors leading-snug">
+                      {articleTitle(a)}
+                    </h3>
+                    <div className="flex items-center justify-between mt-auto">
+                      <span className="text-xs text-violet-600 dark:text-violet-400 font-medium truncate">{sourceName(a.source_id)}</span>
+                      <ExternalLink className="w-3 h-3 text-gray-300 group-hover:text-violet-500 transition-colors shrink-0" />
+                    </div>
+                  </a>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-3">
+              <Button variant="outline" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
+                ←
+              </Button>
+              <span className="text-sm text-gray-500">{page} / {totalPages}</span>
+              <Button variant="outline" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
+                →
+              </Button>
             </div>
           )}
         </div>

@@ -15,7 +15,7 @@ import {
   Moon,
   X,
   Languages,
-  Radar,
+  Microscope,
   ClipboardCheck,
   Rss,
 } from 'lucide-react';
@@ -50,19 +50,20 @@ export function Sidebar({ open, onClose, alertCount = 0 }: SidebarProps) {
   const { theme, toggleTheme } = useTheme();
 
   const navItems: NavItem[] = [
-    { href: '/dashboard', labelKey: 'nav.dashboard', icon: LayoutDashboard },
-    { href: '/watch', labelKey: 'nav.watch', icon: Radar },
-    { href: '/feeds', labelKey: 'nav.feeds', icon: Newspaper },
-    { href: '/cves', labelKey: 'nav.cves', icon: Bug },
-    { href: '/synthesis', labelKey: 'nav.synthesis', icon: Brain },
+    { href: '/dashboard', labelKey: 'nav.dashboard',   icon: LayoutDashboard },
+    { href: '/feeds',     labelKey: 'nav.feeds',       icon: Newspaper },
+    { href: '/cves',      labelKey: 'nav.cves',        icon: Bug },
+    { href: '/watch',     labelKey: 'nav.watch',       icon: Microscope },
     {
       href: '/alerts',
       labelKey: 'nav.alerts',
       icon: AlertTriangle,
       badge: alertCount,
     },
-    { href: '/sources', labelKey: 'nav.sources', icon: Rss },
-    { href: '/settings', labelKey: 'nav.settings', icon: Settings },
+    { href: '/compliance', labelKey: 'nav.compliance', icon: ClipboardCheck },
+    { href: '/synthesis',  labelKey: 'nav.synthesis',  icon: Brain },
+    { href: '/sources',    labelKey: 'nav.sources',    icon: Rss },
+    { href: '/settings',   labelKey: 'nav.settings',   icon: Settings },
   ];
 
   const isActive = useCallback(
