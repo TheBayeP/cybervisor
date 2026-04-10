@@ -145,6 +145,9 @@ export interface ArticleFilters {
   country?: string;
   language?: string;
   source_id?: string;
+  source_categories?: string[]; // filter by source category (cert, government, research, vendor, threat-intel, news, blog, cve)
+  categories?: string[]; // filter by article category (multiple)
+  severities?: string[]; // filter by multiple severities
   read?: number;
   since?: string; // ISO date string
   limit?: number;
@@ -255,11 +258,11 @@ export function getArticles(filters: ArticleFilters = {}): ArticleRow[] {
   const limit = filters.limit ?? 100;
   const offset = filters.offset ?? 0;
 
-  // Sort
-  let orderBy = "collected_at DESC";
-  if (filters.sort === "date_asc") orderBy = "collected_at ASC";
-  else if (filters.sort === "severity_desc") orderBy = "CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END ASC";
-  else if (filters.sort === "severity_asc") orderBy = "CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END DESC";
+  // Sort: use pub_date when available, fall back to collected_at for correct chronological order
+  let orderBy = "COALESCE(pub_date, collected_at) DESC";
+  if (filters.sort === "date_asc") orderBy = "COALESCE(pub_date, collected_at) ASC";
+  else if (filters.sort === "severity_desc") orderBy = "CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END ASC, COALESCE(pub_date, collected_at) DESC";
+  else if (filters.sort === "severity_asc") orderBy = "CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END DESC, COALESCE(pub_date, collected_at) ASC";
 
   const stmt = d.prepare(
     `SELECT * FROM articles ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`

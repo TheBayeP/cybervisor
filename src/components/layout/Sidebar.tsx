@@ -61,7 +61,6 @@ export function Sidebar({ open, onClose, alertCount = 0 }: SidebarProps) {
       icon: AlertTriangle,
       badge: alertCount,
     },
-    { href: '/compliance', labelKey: 'nav.compliance', icon: ClipboardCheck },
     { href: '/sources', labelKey: 'nav.sources', icon: Rss },
     { href: '/settings', labelKey: 'nav.settings', icon: Settings },
   ];
