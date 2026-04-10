@@ -258,11 +258,19 @@ export function getArticles(filters: ArticleFilters = {}): ArticleRow[] {
   const limit = filters.limit ?? 100;
   const offset = filters.offset ?? 0;
 
-  // Sort: use pub_date when available, fall back to collected_at for correct chronological order
-  let orderBy = "COALESCE(pub_date, collected_at) DESC";
-  if (filters.sort === "date_asc") orderBy = "COALESCE(pub_date, collected_at) ASC";
-  else if (filters.sort === "severity_desc") orderBy = "CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END ASC, COALESCE(pub_date, collected_at) DESC";
-  else if (filters.sort === "severity_asc") orderBy = "CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END DESC, COALESCE(pub_date, collected_at) ASC";
+  // Sort: use pub_date only when it is within a reasonable range (2018-now+1d).
+  // Feeds sometimes carry very old or future dates — fall back to collected_at in those cases.
+  const validDate = `CASE
+    WHEN pub_date IS NOT NULL
+      AND pub_date >= '2018-01-01'
+      AND pub_date <= datetime('now', '+1 day')
+    THEN pub_date
+    ELSE collected_at
+  END`;
+  let orderBy = `${validDate} DESC`;
+  if (filters.sort === "date_asc") orderBy = `${validDate} ASC`;
+  else if (filters.sort === "severity_desc") orderBy = `CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END ASC, ${validDate} DESC`;
+  else if (filters.sort === "severity_asc") orderBy = `CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END DESC, ${validDate} ASC`;
 
   const stmt = d.prepare(
     `SELECT * FROM articles ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`

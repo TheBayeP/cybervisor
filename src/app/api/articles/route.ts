@@ -61,11 +61,19 @@ export async function GET(request: NextRequest) {
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-    // Sort: always prefer pub_date over collected_at for chronological accuracy
-    let orderBy = "COALESCE(pub_date, collected_at) DESC";
-    if (sort === "date_asc") orderBy = "COALESCE(pub_date, collected_at) ASC";
-    else if (sort === "severity_desc") orderBy = "CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END ASC, COALESCE(pub_date, collected_at) DESC";
-    else if (sort === "severity_asc") orderBy = "CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END DESC, COALESCE(pub_date, collected_at) ASC";
+    // Sort: use pub_date only when within a valid range (2018 → now+1d).
+    // RSS feeds sometimes embed very old or future dates — ignore those.
+    const validDate = `CASE
+      WHEN pub_date IS NOT NULL
+        AND pub_date >= '2018-01-01'
+        AND pub_date <= datetime('now', '+1 day')
+      THEN pub_date
+      ELSE collected_at
+    END`;
+    let orderBy = `${validDate} DESC`;
+    if (sort === "date_asc") orderBy = `${validDate} ASC`;
+    else if (sort === "severity_desc") orderBy = `CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END ASC, ${validDate} DESC`;
+    else if (sort === "severity_asc") orderBy = `CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END DESC, ${validDate} ASC`;
 
     const articles = d.prepare(
       `SELECT * FROM articles ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`
