@@ -20,6 +20,14 @@ import { TimePeriodFilter, getStartDateFromPeriod, type TimePeriod, type SortOpt
 const COMPLIANCE_SOURCE_IDS = sources
   .filter((s) =>
     s.category === 'government' ||
+    // TISAX / automotive standards
+    s.tags.includes('tisax') ||
+    s.tags.includes('iso21434') ||
+    s.tags.includes('ems') ||
+    s.id === 'enx-tisax' ||
+    s.id === 'sae-news' ||
+    s.id === 'auto-isac' ||
+    // CERT/gov sources
     (s.category === 'cert' && (
       s.tags.includes('france') ||
       s.tags.includes('eu') ||
@@ -31,7 +39,8 @@ const COMPLIANCE_SOURCE_IDS = sources
       s.id === 'enisa-publications' ||
       s.id === 'ncsc-uk' ||
       s.id === 'ncsc-uk-news' ||
-      s.id === 'cisa-alerts'
+      s.id === 'cisa-alerts' ||
+      s.id === 'ics-cert-advisories'
     ))
   )
   .map((s) => s.id);
@@ -157,8 +166,8 @@ export default function CompliancePage() {
           </div>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             {lang === 'fr'
-              ? `Publications réglementaires — ANSSI, CISA, ENISA, NCSC, NIS2, RGPD… · ${total} articles`
-              : `Regulatory publications — ANSSI, CISA, ENISA, NCSC, NIS2, GDPR… · ${total} articles`}
+              ? `Publications réglementaires EMS & Automobile — ANSSI, CISA ICS, ENISA, ENX/TISAX, SAE J3061, NIS2, RGPD… · ${total} articles`
+              : `EMS & Automotive regulatory publications — ANSSI, CISA ICS, ENISA, ENX/TISAX, SAE J3061, NIS2, GDPR… · ${total} articles`}
           </p>
         </div>
         <Button variant="outline" onClick={fetchArticles}>
@@ -173,7 +182,7 @@ export default function CompliancePage() {
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder={lang === 'fr' ? 'Rechercher NIS2, RGPD, ANSSI, certification...' : 'Search NIS2, GDPR, ANSSI, certification...'}
+          placeholder={lang === 'fr' ? 'Rechercher TISAX, NIS2, RGPD, ISO 21434, UNECE WP.29, IATF 16949, ANSSI...' : 'Search TISAX, NIS2, GDPR, ISO 21434, UNECE WP.29, IATF 16949, ANSSI...'}
           className={cn(
             'w-full pl-10 pr-4 py-2.5 rounded-lg border text-sm transition-colors',
             'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700',

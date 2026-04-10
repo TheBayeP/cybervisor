@@ -359,6 +359,38 @@ const researchSources: Source[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// EMS / Automotive / ICS-OT sources (specific to the sector)
+// ---------------------------------------------------------------------------
+
+const automotiveIcsSources: Source[] = [
+  // --- OT / ICS Security ---
+  { id: "dragos-blog", name: "Dragos Blog", url: "https://www.dragos.com/blog/feed/", website: "https://www.dragos.com", category: "vendor", country: "US", language: "en", priority: 1, tags: ["ics", "ot", "scada", "industrial"] },
+  { id: "claroty-blog", name: "Claroty Blog", url: "https://claroty.com/blog/rss.xml", website: "https://claroty.com", category: "vendor", country: "US", language: "en", priority: 1, tags: ["ics", "ot", "industrial", "automotive"] },
+  { id: "nozomi-blog", name: "Nozomi Networks Blog", url: "https://www.nozominetworks.com/blog/rss.xml", website: "https://www.nozominetworks.com", category: "vendor", country: "US", language: "en", priority: 1, tags: ["ics", "ot", "scada", "industrial"] },
+  { id: "otorio-blog", name: "OTORIO Blog", url: "https://www.otorio.com/blog/feed/", website: "https://www.otorio.com", category: "vendor", country: "IL", language: "en", priority: 2, tags: ["ics", "ot", "industrial"] },
+  { id: "waterfall-blog", name: "Waterfall Security Blog", url: "https://waterfall-security.com/blog/feed/", website: "https://waterfall-security.com", category: "vendor", country: "IL", language: "en", priority: 2, tags: ["ics", "ot", "industrial"] },
+
+  // --- Automotive Cybersecurity ---
+  { id: "upstream-blog", name: "Upstream Security Blog", url: "https://upstream.auto/blog/rss/", website: "https://upstream.auto", category: "vendor", country: "IL", language: "en", priority: 1, tags: ["automotive", "connected-vehicle", "v2x"] },
+  { id: "vicone-blog", name: "VicOne Blog", url: "https://vicone.com/blog/feed/", website: "https://vicone.com", category: "vendor", country: "TW", language: "en", priority: 1, tags: ["automotive", "ecu", "can-bus"] },
+  { id: "c2a-security", name: "C2A Security Blog", url: "https://www.c2a-sec.com/blog/feed/", website: "https://www.c2a-sec.com", category: "vendor", country: "IL", language: "en", priority: 2, tags: ["automotive", "iso21434", "tisax"] },
+  { id: "auto-isac", name: "Auto-ISAC", url: "https://www.automotiveisac.com/feed/", website: "https://www.automotiveisac.com", category: "research", country: "US", language: "en", priority: 1, tags: ["automotive", "isac", "threat-intel"] },
+
+  // --- Standards & Regulatory (TISAX / ISO 21434 / UNECE) ---
+  { id: "sae-news", name: "SAE Cybersecurity News", url: "https://www.sae.org/rss/cybersecurity.xml", website: "https://www.sae.org", category: "research", country: "US", language: "en", priority: 2, tags: ["automotive", "sae", "iso21434", "standards"] },
+  { id: "enx-tisax", name: "ENX TISAX News", url: "https://enx.com/en-US/news/rss/", website: "https://enx.com", category: "government", country: "DE", language: "en", priority: 1, tags: ["tisax", "automotive", "ems", "compliance"] },
+
+  // --- ICS / SCADA Advisories ---
+  { id: "ics-cert-advisories", name: "CISA ICS Advisories", url: "https://www.cisa.gov/cybersecurity-advisories/ics-advisories.xml", website: "https://www.cisa.gov/ics", category: "cert", country: "US", language: "en", priority: 1, tags: ["ics", "scada", "plc", "industrial", "automotive"] },
+  { id: "sans-ics", name: "SANS ICS Blog", url: "https://ics.sans.org/blog/rss", website: "https://ics.sans.org", category: "research", country: "US", language: "en", priority: 2, tags: ["ics", "ot", "training", "research"] },
+
+  // --- Embedded / Hardware Security ---
+  { id: "scythe-blog", name: "SCYTHE Blog", url: "https://www.scythe.io/library/rss.xml", website: "https://www.scythe.io", category: "research", country: "US", language: "en", priority: 3, tags: ["embedded", "adversary-simulation"] },
+  { id: "riscure-blog", name: "Riscure Blog", url: "https://www.riscure.com/blog/feed/", website: "https://www.riscure.com", category: "research", country: "NL", language: "en", priority: 2, tags: ["embedded", "hardware", "automotive", "ecu"] },
+  { id: "ioactive-blog", name: "IOActive Labs Blog", url: "https://ioactive.com/feed/", website: "https://ioactive.com", category: "research", country: "US", language: "en", priority: 2, tags: ["embedded", "automotive", "hardware", "iot"] },
+];
+
+// ---------------------------------------------------------------------------
 // Combine all sources
 // ---------------------------------------------------------------------------
 
@@ -369,6 +401,7 @@ export const sources: Source[] = [
   ...cveSources,
   ...threatIntelSources,
   ...researchSources,
+  ...automotiveIcsSources,
 ];
 
 // ---------------------------------------------------------------------------

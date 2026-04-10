@@ -10,7 +10,7 @@ import {
   Brain,
   AlertTriangle,
   Settings,
-  ShieldCheck,
+  Cpu,
   Sun,
   Moon,
   X,
@@ -108,7 +108,9 @@ export function Sidebar({ open, onClose, alertCount = 0 }: SidebarProps) {
             className="flex items-center gap-2.5"
             onClick={onClose}
           >
-            <ShieldCheck className="h-7 w-7 text-cyber-500" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-cyan-500 shadow">
+              <Cpu className="h-4 w-4 text-white" />
+            </div>
             <div className="flex flex-col">
               <span className="text-lg font-bold leading-tight tracking-tight cyber-gradient-text">
                 {t('app.name')}

@@ -15,8 +15,16 @@ import { Button } from '@/components/ui';
 // Source selection — elite research & threat-intel sources
 // ---------------------------------------------------------------------------
 
+// Sources — elite research + OT/ICS/Automotive (EMS context)
 const WATCH_SOURCE_IDS = sources
   .filter((s) =>
+    // OT/ICS/Automotive vendors
+    s.tags.includes('ics') ||
+    s.tags.includes('ot') ||
+    s.tags.includes('automotive') ||
+    s.tags.includes('embedded') ||
+    s.tags.includes('hardware') ||
+    // Elite research labs
     s.category === 'research' ||
     (s.category === 'vendor' && (
       s.tags.includes('research') ||
@@ -25,18 +33,18 @@ const WATCH_SOURCE_IDS = sources
       [
         'google-project-zero', 'paloalto-unit42', 'cisco-talos', 'mandiant-blog',
         'crowdstrike-blog', 'sentinelone-labs', 'elastic-security', 'kaspersky-securelist',
-        'eset-welivesecurity', 'checkpoint-research', 'sekoia-blog', 'orangecyberdefense',
-        'harfanglab-blog', 'symantec-threat', 'trendmicro-research', 'microsoft-security',
-        'microsoft-msrc', 'google-threat', 'malwarebytes-labs',
+        'eset-welivesecurity', 'checkpoint-research', 'sekoia-blog',
+        'harfanglab-blog', 'trendmicro-research', 'microsoft-security',
+        'malwarebytes-labs', 'dragos-blog', 'claroty-blog', 'nozomi-blog',
+        'upstream-blog', 'vicone-blog',
       ].includes(s.id)
     )) ||
     (s.category === 'blog' && [
       'krebs-on-security', 'schneier-security', 'sans-isc', 'korben',
-      'nakedsecurity-sophos', 'graham-cluley',
     ].includes(s.id)) ||
     (s.category === 'threat-intel' && [
-      'mitre-attack-blog', 'alienvault-otx', 'recorded-future', 'virustotal-blog',
-      'any-run-blog', 'socradar-blog', 'greynoise-blog', 'trellix-blog',
+      'mitre-attack-blog', 'alienvault-otx', 'recorded-future',
+      'any-run-blog', 'greynoise-blog',
     ].includes(s.id))
   )
   .map((s) => s.id);
@@ -46,12 +54,14 @@ const WATCH_SOURCE_IDS = sources
 // ---------------------------------------------------------------------------
 
 const THEME_TAGS: { label_fr: string; label_en: string; keywords: string[]; icon: React.ComponentType<{className?:string}>; color: string }[] = [
-  { label_fr: 'APT / Nation-State', label_en: 'APT / Nation-State', keywords: ['apt', 'nation-state', 'nation state', 'espionnage', 'state-sponsored'], icon: Target, color: 'text-red-500' },
-  { label_fr: 'Malware / Ransomware', label_en: 'Malware / Ransomware', keywords: ['malware', 'ransomware', 'trojan', 'backdoor', 'botnet'], icon: Bug, color: 'text-orange-500' },
-  { label_fr: 'Zero-Day / Exploit', label_en: 'Zero-Day / Exploit', keywords: ['zero-day', 'zero day', '0day', 'exploit', 'poc', 'rce', 'lpe'], icon: Zap, color: 'text-yellow-500' },
-  { label_fr: 'Outil / Technique', label_en: 'Tool / Technique', keywords: ['tool', 'framework', 'outil', 'technique', 'method', 'bypass', 'evasion'], icon: Cpu, color: 'text-purple-500' },
-  { label_fr: 'Recherche', label_en: 'Research', keywords: ['research', 'analyse', 'analysis', 'paper', 'étude', 'study', 'whitepaper'], icon: FlaskConical, color: 'text-blue-500' },
-  { label_fr: 'Défense / Blue Team', label_en: 'Defense / Blue Team', keywords: ['defense', 'detection', 'hunting', 'siem', 'edr', 'monitoring', 'yara'], icon: Shield, color: 'text-green-500' },
+  { label_fr: 'Automobile / V2X', label_en: 'Automotive / V2X', keywords: ['automotive', 'vehicle', 'v2x', 'can-bus', 'ecu', 'ota update', 'telematics', 'isobus', 'autosar', 'tisax', 'iso 21434', '21434'], icon: Target, color: 'text-blue-600' },
+  { label_fr: 'ICS / OT / SCADA', label_en: 'ICS / OT / SCADA', keywords: ['ics', 'scada', 'ot security', 'plc', 'hmi', 'modbus', 'dnp3', 'profinet', 'industrial', 'iec 62443', '62443', 'purdue'], icon: Cpu, color: 'text-orange-500' },
+  { label_fr: 'APT / Nation-State', label_en: 'APT / Nation-State', keywords: ['apt', 'nation-state', 'nation state', 'espionnage', 'state-sponsored', 'supply chain attack'], icon: Target, color: 'text-red-500' },
+  { label_fr: 'Malware / Ransomware', label_en: 'Malware / Ransomware', keywords: ['malware', 'ransomware', 'trojan', 'backdoor', 'botnet', 'wiper'], icon: Bug, color: 'text-rose-500' },
+  { label_fr: 'Zero-Day / Exploit', label_en: 'Zero-Day / Exploit', keywords: ['zero-day', 'zero day', '0day', 'exploit', 'poc', 'rce', 'lpe', 'in-the-wild'], icon: Zap, color: 'text-yellow-500' },
+  { label_fr: 'Outil / Technique', label_en: 'Tool / Technique', keywords: ['tool', 'framework', 'outil', 'technique', 'method', 'bypass', 'evasion', 'firmware'], icon: FlaskConical, color: 'text-purple-500' },
+  { label_fr: 'Recherche', label_en: 'Research', keywords: ['research', 'analyse', 'analysis', 'paper', 'étude', 'study', 'whitepaper', 'embedded', 'hardware'], icon: Microscope, color: 'text-blue-500' },
+  { label_fr: 'Défense / Blue Team', label_en: 'Defense / Blue Team', keywords: ['defense', 'detection', 'hunting', 'siem', 'edr', 'monitoring', 'yara', 'network segmentation'], icon: Shield, color: 'text-green-500' },
 ];
 
 function detectTheme(title: string, desc: string) {
