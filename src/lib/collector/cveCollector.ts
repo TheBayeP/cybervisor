@@ -35,7 +35,7 @@ interface NvdVulnerability {
         baseSeverity: string;
       }>;
     };
-    references?: Array<{ url: string; source?: string }>;
+    references?: Array<{ url: string; source?: string; tags?: string[] }>;
     configurations?: Array<{
       nodes: Array<{
         cpeMatch: Array<{
@@ -48,11 +48,34 @@ interface NvdVulnerability {
 }
 
 // ---------------------------------------------------------------------------
+// Major vendors — CVEs on these products are always worth alerting
+// ---------------------------------------------------------------------------
+
+const MAJOR_VENDORS = new Set([
+  "microsoft", "apple", "google", "cisco", "fortinet", "paloaltonetworks",
+  "juniper", "vmware", "broadcom", "oracle", "adobe", "sap", "ivanti",
+  "citrix", "f5", "barracuda", "sonicwall", "watchguard", "checkpoint",
+  "aruba", "netgear", "zyxel", "dlink", "linksys", "tp-link",
+  "atlassian", "veeam", "progress", "moveit", "papercut", "openssl",
+  "apache", "nginx", "linux", "canonical", "redhat", "debian",
+  "wordpress", "drupal", "moodle", "confluence", "jira", "jenkins",
+  "openssl", "openssh", "curl", "log4j", "spring", "struts",
+]);
+
+// Keywords indicating active exploitation
+const EXPLOITATION_KEYWORDS = [
+  "actively exploited", "exploited in the wild", "in-the-wild", "in the wild",
+  "zero-day", "0-day", "0day", "under active attack", "mass exploitation",
+  "wormable", "exploited by", "ransomware", "threat actor", "proof-of-concept",
+  "poc available", "metasploit", "exploit code",
+];
+
+// ---------------------------------------------------------------------------
 // NVD API helpers
 // ---------------------------------------------------------------------------
 
 const NVD_BASE_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0";
-const REQUEST_DELAY_MS = 6_500; // ~5 requests per 30 s without API key
+const REQUEST_DELAY_MS = 6_500; // ~5 requests per 30s without API key
 const MAX_RESULTS_PER_PAGE = 2000;
 
 function formatNvdDate(date: Date): string {
@@ -110,7 +133,6 @@ function extractCvss(metrics: NvdVulnerability["cve"]["metrics"]): {
 } {
   if (!metrics) return { score: null, vector: null, severity: null };
 
-  // Prefer v3.1 > v3.0 > v2
   const v31 = metrics.cvssMetricV31?.[0];
   if (v31) {
     return {
@@ -143,21 +165,23 @@ function extractCvss(metrics: NvdVulnerability["cve"]["metrics"]): {
 
 function extractAffectedProducts(
   configurations: NvdVulnerability["cve"]["configurations"]
-): string | null {
-  if (!configurations || configurations.length === 0) return null;
+): { display: string | null; vendors: string[] } {
+  if (!configurations || configurations.length === 0) {
+    return { display: null, vendors: [] };
+  }
 
-  const products = new Set<string>();
+  const products = new Map<string, Set<string>>();
   for (const config of configurations) {
     for (const node of config.nodes) {
       for (const match of node.cpeMatch) {
         if (match.vulnerable) {
-          // CPE format: cpe:2.3:a:vendor:product:version:...
           const parts = match.criteria.split(":");
           if (parts.length >= 5) {
             const vendor = parts[3];
             const product = parts[4];
             if (vendor !== "*" && product !== "*") {
-              products.add(`${vendor}:${product}`);
+              if (!products.has(vendor)) products.set(vendor, new Set());
+              products.get(vendor)!.add(product);
             }
           }
         }
@@ -165,7 +189,88 @@ function extractAffectedProducts(
     }
   }
 
-  return products.size > 0 ? Array.from(products).join(", ") : null;
+  const vendors = Array.from(products.keys());
+  const entries = vendors.map((v) => {
+    const prods = Array.from(products.get(v)!).slice(0, 3).join(", ");
+    return `${v}: ${prods}`;
+  });
+
+  return {
+    display: entries.length > 0 ? entries.join(" | ") : null,
+    vendors,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Alert relevance scoring
+// ---------------------------------------------------------------------------
+
+interface AlertRelevance {
+  shouldAlert: boolean;
+  alertType: string;
+  reason: string;
+  priority: "critical" | "high";
+}
+
+function assessAlertRelevance(
+  cveId: string,
+  cvssScore: number,
+  description: string | null,
+  vendors: string[],
+  references: NvdVulnerability["cve"]["references"]
+): AlertRelevance | null {
+  if (cvssScore < 9.0) return null; // Only CVSS ≥ 9.0
+
+  const descLower = (description ?? "").toLowerCase();
+
+  // Check for active exploitation indicators
+  const isActivelyExploited = EXPLOITATION_KEYWORDS.some((kw) =>
+    descLower.includes(kw)
+  );
+
+  // Check reference tags for known exploitation
+  const refTags = references?.flatMap((r) => r.tags ?? []).map((t) => t.toLowerCase()) ?? [];
+  const hasExploitedTag =
+    refTags.includes("exploited") ||
+    refTags.includes("exploit") ||
+    refTags.includes("third-party-advisory");
+
+  // Check if major vendor is affected
+  const affectsKnownVendor = vendors.some((v) =>
+    MAJOR_VENDORS.has(v.toLowerCase())
+  );
+
+  // Always alert for actively exploited CVEs
+  if (isActivelyExploited || hasExploitedTag) {
+    return {
+      shouldAlert: true,
+      alertType: "cve_critical_exploited",
+      reason: "Actively exploited in the wild",
+      priority: "critical",
+    };
+  }
+
+  // Alert for CVSS ≥ 9.5 on any product (extremely critical)
+  if (cvssScore >= 9.5) {
+    return {
+      shouldAlert: true,
+      alertType: affectsKnownVendor ? "cve_critical_major_vendor" : "cve_critical",
+      reason: `CVSS ${cvssScore} — exceptionally critical severity`,
+      priority: "critical",
+    };
+  }
+
+  // Alert for CVSS ≥ 9.0 only if a major vendor is affected
+  if (cvssScore >= 9.0 && affectsKnownVendor) {
+    return {
+      shouldAlert: true,
+      alertType: "cve_critical_major_vendor",
+      reason: `CVSS ${cvssScore} on major vendor product`,
+      priority: "critical",
+    };
+  }
+
+  return null; // Not relevant enough
 }
 
 // ---------------------------------------------------------------------------
@@ -188,7 +293,6 @@ export async function collectRecentCves(
   let pageCount = 0;
 
   while (startIndex < totalResults) {
-    // Rate-limit: wait between requests (skip for the first request)
     if (pageCount > 0) {
       await sleep(REQUEST_DELAY_MS);
     }
@@ -209,10 +313,8 @@ export async function collectRecentCves(
       const cve = vuln.cve;
       const description = extractDescription(cve.descriptions);
       const cvss = extractCvss(cve.metrics);
-      const references = cve.references
-        ? cve.references.map((r) => r.url)
-        : [];
-      const affectedProducts = extractAffectedProducts(cve.configurations);
+      const references = cve.references ?? [];
+      const { display: affectedProducts, vendors } = extractAffectedProducts(cve.configurations);
 
       const cveInput: CveInput = {
         cve_id: cve.id,
@@ -222,7 +324,7 @@ export async function collectRecentCves(
         severity: cvss.severity,
         published_date: cve.published,
         modified_date: cve.lastModified,
-        references_json: references.length > 0 ? JSON.stringify(references) : null,
+        references_json: references.length > 0 ? JSON.stringify(references.map((r) => r.url)) : null,
         affected_products: affectedProducts,
       };
 
@@ -230,36 +332,44 @@ export async function collectRecentCves(
         saveCve(cveInput);
         stats.new++;
       } catch {
-        // INSERT OR REPLACE handles duplicates; genuine errors are rare
+        // INSERT OR REPLACE handles duplicates
       }
 
       stats.total++;
 
-      // Create critical alert for CVSS >= 9.0
-      if (cvss.score !== null && cvss.score >= 9.0) {
-        stats.critical++;
+      // Assess if this CVE warrants a user-facing alert
+      if (cvss.score !== null) {
+        const relevance = assessAlertRelevance(
+          cve.id,
+          cvss.score,
+          description,
+          vendors,
+          references
+        );
 
-        const alertDescription = [
-          `CVSS Score: ${cvss.score}`,
-          cvss.severity ? `Severity: ${cvss.severity.toUpperCase()}` : null,
-          affectedProducts ? `Affected: ${affectedProducts}` : null,
-          description ? truncateText(description, 500) : null,
-        ]
-          .filter(Boolean)
-          .join("\n");
+        if (relevance) {
+          stats.critical++;
 
-        const alert: AlertInput = {
-          type: "cve_critical",
-          title: `${cve.id} - Critical CVE (CVSS ${cvss.score})`,
-          description: alertDescription,
-          severity: "critical",
-          source_link: `https://nvd.nist.gov/vuln/detail/${cve.id}`,
-        };
+          const alertDescription = [
+            `📊 CVSS: ${cvss.score}/10 — ${(cvss.severity ?? "").toUpperCase()}`,
+            relevance.reason,
+            affectedProducts ? `🎯 Produits: ${truncateText(affectedProducts, 200)}` : null,
+            description ? `📝 ${truncateText(description, 400)}` : null,
+            `⚡ Action: Évaluer l'exposition et appliquer le correctif si disponible.`,
+          ]
+            .filter(Boolean)
+            .join("\n");
 
-        try {
+          const alert: AlertInput = {
+            type: relevance.alertType,
+            title: `${cve.id} — CVSS ${cvss.score}${relevance.alertType === "cve_critical_exploited" ? " ⚠️ Exploitée activement" : ""}`,
+            description: alertDescription,
+            severity: relevance.priority,
+            source_link: `https://nvd.nist.gov/vuln/detail/${cve.id}`,
+            ref_id: cve.id, // Prevents duplicate alerts for the same CVE
+          };
+
           saveAlert(alert);
-        } catch {
-          // Alert may already exist or other DB issue; non-fatal
         }
       }
     }

@@ -6,6 +6,39 @@ const DB_DIR = path.resolve("./data");
 const DB_PATH = path.join(DB_DIR, "cybervisor.db");
 
 let db: Database.Database | null = null;
+let walCheckpointTimer: ReturnType<typeof setInterval> | null = null;
+
+// ---------------------------------------------------------------------------
+// Graceful shutdown — close DB cleanly on process exit
+// ---------------------------------------------------------------------------
+
+function closeDb(): void {
+  if (walCheckpointTimer) {
+    clearInterval(walCheckpointTimer);
+    walCheckpointTimer = null;
+  }
+  if (db && db.open) {
+    try {
+      db.pragma("wal_checkpoint(TRUNCATE)");
+      db.close();
+      console.log("[DB] Database closed gracefully.");
+    } catch (e) {
+      console.error("[DB] Error closing database:", e);
+    }
+    db = null;
+  }
+}
+
+// Register shutdown handlers only once (guard against double-registration)
+if (process.listenerCount("SIGTERM") === 0) {
+  process.on("SIGTERM", () => { closeDb(); process.exit(0); });
+}
+if (process.listenerCount("SIGINT") === 0) {
+  process.on("SIGINT", () => { closeDb(); process.exit(0); });
+}
+if (process.listenerCount("beforeExit") === 0) {
+  process.on("beforeExit", closeDb);
+}
 
 function ensureDataDir(): void {
   if (!fs.existsSync(DB_DIR)) {
@@ -69,6 +102,7 @@ CREATE TABLE IF NOT EXISTS alerts (
   description TEXT,
   severity TEXT NOT NULL,
   source_link TEXT,
+  ref_id TEXT,
   acknowledged INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now'))
 );
@@ -93,24 +127,64 @@ CREATE INDEX IF NOT EXISTS idx_alerts_severity ON alerts(severity);
 CREATE INDEX IF NOT EXISTS idx_alerts_acknowledged ON alerts(acknowledged);
 `;
 
-export function getDb(): Database.Database {
-  if (db) return db;
+// ---------------------------------------------------------------------------
+// Health check — detect stale/closed connections and reconnect
+// ---------------------------------------------------------------------------
 
+function isDbHealthy(): boolean {
+  if (!db || !db.open) return false;
+  try {
+    db.prepare("SELECT 1").get();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function openDb(): Database.Database {
   ensureDataDir();
+  const instance = new Database(DB_PATH);
+  instance.pragma("journal_mode = WAL");
+  instance.pragma("busy_timeout = 5000");
+  instance.pragma("cache_size = -4000"); // 4MB cache
+  instance.pragma("foreign_keys = ON");
+  instance.pragma("synchronous = NORMAL"); // Faster writes, safe with WAL
+  instance.exec(CREATE_TABLES_SQL);
+  instance.exec(CREATE_INDEXES_SQL);
 
-  db = new Database(DB_PATH);
+  // Schedule WAL checkpoint every 30 minutes to prevent WAL bloat
+  if (!walCheckpointTimer) {
+    walCheckpointTimer = setInterval(() => {
+      try {
+        if (db && db.open) {
+          db.pragma("wal_checkpoint(PASSIVE)");
+          // Log memory usage to help detect leaks
+          const mem = process.memoryUsage();
+          const rss = Math.round(mem.rss / 1024 / 1024);
+          const heap = Math.round(mem.heapUsed / 1024 / 1024);
+          console.log(`[DB] WAL checkpoint done. RSS: ${rss}MB, Heap: ${heap}MB`);
+        }
+      } catch (e) {
+        console.error("[DB] WAL checkpoint error:", e);
+      }
+    }, 30 * 60 * 1000); // every 30 min
+    walCheckpointTimer.unref(); // Don't block process exit
+  }
 
-  // Enable WAL mode for better concurrent read/write performance
-  // and reduced memory usage compared to default journal mode
-  db.pragma("journal_mode = WAL");
-  db.pragma("busy_timeout = 5000");
-  db.pragma("cache_size = -2000"); // 2MB cache (negative = KB)
-  db.pragma("foreign_keys = ON");
+  return instance;
+}
 
-  db.exec(CREATE_TABLES_SQL);
-  db.exec(CREATE_INDEXES_SQL);
-
-  return db;
+export function getDb(): Database.Database {
+  // Auto-reconnect if connection is dead or stale
+  if (!isDbHealthy()) {
+    if (db) {
+      try { db.close(); } catch { /* ignore */ }
+      db = null;
+    }
+    console.log("[DB] (Re)connecting to database...");
+    db = openDb();
+  }
+  return db!;
 }
 
 // ---------------------------------------------------------------------------
@@ -481,10 +555,12 @@ export interface AlertInput {
   description?: string | null;
   severity: string;
   source_link?: string | null;
+  ref_id?: string | null; // unique ref for dedup (e.g. CVE id)
 }
 
 export interface AlertRow extends AlertInput {
   id: number;
+  ref_id?: string | null;
   acknowledged: number;
   created_at: string;
 }
@@ -499,12 +575,25 @@ export interface AlertFilters {
   sort?: string;
 }
 
-export function saveAlert(alert: AlertInput): void {
+/** Returns true if an alert with this ref_id already exists (within the last 7 days). */
+export function alertExistsForRef(refId: string): boolean {
+  const d = getDb();
+  const row = d.prepare(
+    `SELECT id FROM alerts WHERE ref_id = ? AND created_at >= datetime('now', '-7 days') LIMIT 1`
+  ).get(refId) as { id: number } | undefined;
+  return !!row;
+}
+
+export function saveAlert(alert: AlertInput): boolean {
+  // Deduplicate by ref_id if provided
+  if (alert.ref_id && alertExistsForRef(alert.ref_id)) {
+    return false; // already exists
+  }
   const d = getDb();
   d.prepare(
     `INSERT INTO alerts
-      (type, title, title_fr, description, severity, source_link)
-     VALUES (?, ?, ?, ?, ?, ?)`
+      (type, title, title_fr, description, severity, source_link, ref_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).run(
     alert.type,
     alert.title,
@@ -512,7 +601,9 @@ export function saveAlert(alert: AlertInput): void {
     alert.description ?? null,
     alert.severity,
     alert.source_link ?? null,
+    alert.ref_id ?? null,
   );
+  return true;
 }
 
 export function getAlerts(filters: AlertFilters = {}): AlertRow[] {

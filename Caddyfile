@@ -1,0 +1,35 @@
+cybervisor.prixy-mc.fr {
+    # Caddy auto-obtains and auto-renews the Let's Encrypt certificate
+    reverse_proxy localhost:3000 {
+        # Forward real IP to Next.js
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+
+        # Keep-alive to Next.js backend
+        transport http {
+            keepalive 30s
+            keepalive_idle_conns 10
+        }
+    }
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    # Compress responses
+    encode gzip
+
+    # Access logs
+    log {
+        output file /var/log/caddy/cybervisor.log {
+            roll_size 10MB
+            roll_keep 5
+        }
+    }
+}

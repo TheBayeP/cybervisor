@@ -3,7 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useLanguage } from '@/lib/i18n';
 import { Button } from '@/components/ui';
-import { Brain, Clock, FileText, AlertTriangle, Bug, RefreshCw, Sparkles, TrendingUp, Shield, ChevronRight } from 'lucide-react';
+import {
+  Brain, Clock, FileText, AlertTriangle, Bug,
+  RefreshCw, Sparkles, ChevronRight, Download,
+} from 'lucide-react';
 import { cn, formatDate } from '@/lib/utils';
 
 interface Synthesis {
@@ -19,41 +22,47 @@ interface Synthesis {
 }
 
 // ---------------------------------------------------------------------------
-// Markdown-like rendering
+// Markdown renderer — styled for executive reading
 // ---------------------------------------------------------------------------
 
 function renderContent(raw: string): string {
   if (!raw) return '';
   return raw
-    // Headers
-    .replace(/^### (.*$)/gm, '<h3 class="text-base font-bold text-gray-900 dark:text-white mt-5 mb-2 flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-cyber-500 inline-block"></span>$1</h3>')
-    .replace(/^## (.*$)/gm, '<h2 class="text-lg font-bold text-gray-900 dark:text-white mt-6 mb-3 pb-2 border-b border-gray-200 dark:border-gray-800">$1</h2>')
-    .replace(/^# (.*$)/gm, '<h1 class="text-xl font-bold text-gray-900 dark:text-white mt-6 mb-4">$1</h1>')
-    // Bold  
-    .replace(/\*\*(.*?)\*\*/g, '<strong class="text-gray-900 dark:text-white font-semibold">$1</strong>')
+    // H2 sections — main sections with bottom border
+    .replace(/^## (.+)$/gm, '<h2 class="text-base font-bold text-gray-900 dark:text-white mt-6 mb-3 pb-2 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2">$1</h2>')
+    // H3 sub-sections
+    .replace(/^### (.+)$/gm, '<h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mt-4 mb-2">$1</h3>')
+    // Bold
+    .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-gray-900 dark:text-white">$1</strong>')
     // Italic
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    // Inline code
-    .replace(/`(.*?)`/g, '<code class="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs font-mono text-cyber-600 dark:text-cyber-400">$1</code>')
-    // CVE references - make them stand out
-    .replace(/(CVE-\d{4}-\d{4,})/g, '<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 text-xs font-mono font-bold">$1</span>')
-    // Lists
-    .replace(/^- (.*$)/gm, '<li class="flex items-start gap-2 ml-2 mb-1.5 text-gray-700 dark:text-gray-300 text-sm"><span class="w-1 h-1 rounded-full bg-gray-400 mt-2 shrink-0"></span><span>$1</span></li>')
-    // Paragraphs (double newline)
-    .replace(/\n\n/g, '<div class="my-3"></div>')
-    // Single newline
+    .replace(/\*(.*?)\*/g, '<em class="text-gray-600 dark:text-gray-400">$1</em>')
+    // Inline code (CVE IDs etc.)
+    .replace(/`(CVE-[\d-]+)`/g, '<code class="px-1.5 py-0.5 bg-orange-50 dark:bg-orange-900/20 rounded text-xs font-mono font-bold text-orange-700 dark:text-orange-400">$1</code>')
+    .replace(/`(.*?)`/g, '<code class="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs font-mono text-gray-700 dark:text-gray-300">$1</code>')
+    // CVE references standalone
+    .replace(/(CVE-\d{4}-\d{4,})/g, '<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 text-xs font-mono font-bold">$1</span>')
+    // List items — styled
+    .replace(/^- 🔴 (.+)$/gm, '<li class="flex items-start gap-2 mb-2 pl-1"><span class="mt-0.5 flex-shrink-0 text-sm">🔴</span><span class="text-sm text-gray-700 dark:text-gray-300">$1</span></li>')
+    .replace(/^- 🟠 (.+)$/gm, '<li class="flex items-start gap-2 mb-2 pl-1"><span class="mt-0.5 flex-shrink-0 text-sm">🟠</span><span class="text-sm text-gray-700 dark:text-gray-300">$1</span></li>')
+    .replace(/^- 🟡 (.+)$/gm, '<li class="flex items-start gap-2 mb-2 pl-1"><span class="mt-0.5 flex-shrink-0 text-sm">🟡</span><span class="text-sm text-gray-700 dark:text-gray-300">$1</span></li>')
+    .replace(/^- ✅ (.+)$/gm, '<li class="flex items-start gap-2 mb-2 pl-1"><span class="mt-0.5 flex-shrink-0 text-sm">✅</span><span class="text-sm text-gray-700 dark:text-gray-300">$1</span></li>')
+    .replace(/^- 📊 (.+)$/gm, '<li class="flex items-start gap-2 mb-2 pl-1"><span class="mt-0.5 flex-shrink-0 text-sm">📊</span><span class="text-sm text-gray-700 dark:text-gray-300">$1</span></li>')
+    .replace(/^- (.+)$/gm, '<li class="flex items-start gap-2 mb-1.5 pl-1"><span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-gray-400 flex-shrink-0"></span><span class="text-sm text-gray-700 dark:text-gray-300">$1</span></li>')
+    // Paragraphs
+    .replace(/\n\n/g, '</p><p class="text-sm text-gray-700 dark:text-gray-300 mb-3 leading-relaxed">')
     .replace(/\n/g, '<br/>');
 }
 
 // ---------------------------------------------------------------------------
-// Component
+// Main component
 // ---------------------------------------------------------------------------
 
 export default function SynthesisPage() {
-  const { t, lang } = useLanguage();
+  const { lang } = useLanguage();
   const [syntheses, setSyntheses] = useState<Synthesis[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const fetchSyntheses = async () => {
@@ -76,6 +85,7 @@ export default function SynthesisPage() {
 
   const handleGenerate = async (timeSlot: '08:00' | '14:00') => {
     setGenerating(true);
+    setGenerateError(null);
     try {
       const res = await fetch('/api/synthesis', {
         method: 'POST',
@@ -84,41 +94,81 @@ export default function SynthesisPage() {
       });
       if (res.ok) {
         await fetchSyntheses();
+      } else {
+        const err = await res.json();
+        setGenerateError(err.error || 'Erreur lors de la génération');
       }
     } catch (e) {
       console.error('Failed to generate synthesis:', e);
+      setGenerateError('Erreur de connexion');
     } finally {
       setGenerating(false);
     }
   };
 
-  const getContent = (s: Synthesis) => lang === 'fr' ? (s.content_fr || s.content_en) : (s.content_en || s.content_fr);
-  const getSlotLabel = (slot: string) => slot === '08:00' ? t('synthesis.morning') : t('synthesis.afternoon');
-  const getSlotIcon = (slot: string) => slot === '08:00' ? '🌅' : '🌇';
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const getContent = (s: Synthesis) =>
+    lang === 'fr' ? (s.content_fr || s.content_en) : (s.content_en || s.content_fr);
+
+  const getSlotLabel = (slot: string) =>
+    slot === '08:00'
+      ? (lang === 'fr' ? '☀️ Brief Matin' : '☀️ Morning Brief')
+      : (lang === 'fr' ? '🌆 Brief Après-midi' : '🌆 Afternoon Brief');
 
   const selected = syntheses.find(s => s.id === selectedId);
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{t('synthesis.title')}</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+            {lang === 'fr' ? 'Synthèse RSSI' : 'CISO Brief'}
+          </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            {lang === 'fr' ? 'Brief cybersécurité généré par IA' : 'AI-generated cybersecurity brief'}
+            {lang === 'fr'
+              ? 'Brief executif généré par IA — focus sur ce qui compte vraiment'
+              : 'AI-generated executive brief — only what matters'}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button variant="outline" onClick={() => handleGenerate('08:00')} disabled={generating}>
             {generating ? <RefreshCw className="w-4 h-4 mr-1 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1" />}
-            {t('synthesis.morning')}
+            {lang === 'fr' ? 'Matin' : 'Morning'}
           </Button>
           <Button variant="outline" onClick={() => handleGenerate('14:00')} disabled={generating}>
             {generating ? <RefreshCw className="w-4 h-4 mr-1 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1" />}
-            {t('synthesis.afternoon')}
+            {lang === 'fr' ? 'Après-midi' : 'Afternoon'}
           </Button>
+          {selected && (
+            <Button variant="ghost" onClick={handlePrint} title={lang === 'fr' ? 'Imprimer / Exporter PDF' : 'Print / Export PDF'}>
+              <Download className="w-4 h-4" />
+            </Button>
+          )}
         </div>
       </div>
+
+      {/* Generation error */}
+      {generateError && (
+        <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+          ⚠️ {generateError}
+        </div>
+      )}
+
+      {/* Generating notice */}
+      {generating && (
+        <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 px-4 py-3 flex items-center gap-3">
+          <Brain className="w-5 h-5 text-blue-500 animate-pulse" />
+          <p className="text-sm text-blue-700 dark:text-blue-300">
+            {lang === 'fr'
+              ? "Analyse des événements de sécurité en cours… 30-60 secondes."
+              : "Analyzing security events… 30-60 seconds."}
+          </p>
+        </div>
+      )}
 
       {loading ? (
         <div className="space-y-4">
@@ -129,52 +179,53 @@ export default function SynthesisPage() {
       ) : syntheses.length === 0 ? (
         <div className="text-center py-20">
           <Brain className="w-16 h-16 mx-auto text-gray-300 dark:text-gray-700 mb-4" />
-          <p className="text-gray-500 dark:text-gray-400 text-lg">{t('synthesis.noSynthesis')}</p>
+          <p className="text-gray-500 dark:text-gray-400 text-lg">
+            {lang === 'fr' ? 'Aucun brief généré pour le moment' : 'No briefs generated yet'}
+          </p>
           <p className="text-sm text-gray-400 dark:text-gray-500 mt-2">
             {lang === 'fr'
-              ? 'Cliquez sur un des boutons ci-dessus pour générer votre premier brief.'
-              : 'Click one of the buttons above to generate your first brief.'}
+              ? 'Cliquez sur "Matin" ou "Après-midi" pour générer votre premier brief.'
+              : 'Click "Morning" or "Afternoon" to generate your first brief.'}
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6">
-          {/* Left sidebar - synthesis list */}
-          <div className="space-y-2 lg:max-h-[calc(100vh-200px)] lg:overflow-y-auto lg:pr-2">
-            {syntheses.map(synthesis => {
-              const isSelected = selectedId === synthesis.id;
+        <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6">
+          {/* Left sidebar */}
+          <div className="space-y-2 lg:max-h-[calc(100vh-220px)] lg:overflow-y-auto lg:pr-2">
+            {syntheses.map(s => {
+              const isSelected = selectedId === s.id;
               return (
                 <button
-                  key={synthesis.id}
-                  onClick={() => setSelectedId(synthesis.id)}
+                  key={s.id}
+                  onClick={() => setSelectedId(s.id)}
                   className={cn(
                     'w-full text-left rounded-xl border p-3.5 transition-all',
                     isSelected
-                      ? 'border-cyber-500 bg-cyber-500/5 dark:bg-cyber-500/10 ring-1 ring-cyber-500/20'
+                      ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-500/10 ring-1 ring-blue-500/20'
                       : 'border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:border-gray-300 dark:hover:border-gray-700'
                   )}
                 >
                   <div className="flex items-center gap-3">
-                    <span className="text-xl">{getSlotIcon(synthesis.time_slot)}</span>
                     <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-sm text-gray-900 dark:text-white">
-                        {getSlotLabel(synthesis.time_slot)}
+                      <div className="font-semibold text-sm text-gray-900 dark:text-white truncate">
+                        {getSlotLabel(s.time_slot)}
                       </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">
-                        {formatDate(synthesis.date, lang)}
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                        {formatDate(s.date, lang)}
                       </div>
                     </div>
-                    <ChevronRight className={cn('w-4 h-4 text-gray-400 transition-transform', isSelected && 'text-cyber-500')} />
+                    <ChevronRight className={cn('w-4 h-4 text-gray-400 transition-transform flex-shrink-0', isSelected && 'text-blue-500')} />
                   </div>
-                  <div className="flex items-center gap-3 mt-2 text-xs">
+                  <div className="flex items-center gap-2 mt-2 text-xs">
                     <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500">
-                      <FileText className="w-3 h-3" /> {synthesis.articles_count}
+                      <FileText className="w-3 h-3" /> {s.articles_count}
                     </span>
                     <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500">
-                      <Bug className="w-3 h-3" /> {synthesis.cves_count}
+                      <Bug className="w-3 h-3" /> {s.cves_count} CVE
                     </span>
-                    {synthesis.critical_count > 0 && (
+                    {s.critical_count > 0 && (
                       <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 font-bold">
-                        <AlertTriangle className="w-3 h-3" /> {synthesis.critical_count}
+                        <AlertTriangle className="w-3 h-3" /> {s.critical_count}
                       </span>
                     )}
                   </div>
@@ -183,51 +234,53 @@ export default function SynthesisPage() {
             })}
           </div>
 
-          {/* Right content - selected synthesis */}
+          {/* Right — selected synthesis */}
           {selected && (
-            <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
-              {/* Synthesis header */}
-              <div className="p-5 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-gray-50 to-transparent dark:from-gray-800/50 dark:to-transparent">
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="text-2xl">{getSlotIcon(selected.time_slot)}</span>
+            <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden print-brief">
+              {/* Brief header */}
+              <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-slate-50 to-white dark:from-gray-800/50 dark:to-gray-900">
+                <div className="flex items-start justify-between gap-4">
                   <div>
-                    <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Brain className="w-5 h-5 text-blue-500" />
+                      <span className="text-xs font-semibold text-blue-500 uppercase tracking-wider">
+                        {lang === 'fr' ? 'Brief Cybersécurité' : 'Cybersecurity Brief'}
+                      </span>
+                    </div>
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">
                       {getSlotLabel(selected.time_slot)}
                     </h2>
-                    <p className="text-sm text-gray-500">{formatDate(selected.date, lang)}</p>
+                    <p className="text-sm text-gray-500 mt-0.5 flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5" />
+                      {formatDate(selected.date, lang)}
+                    </p>
                   </div>
-                </div>
-
-                {/* Stats cards */}
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-3 text-center">
-                    <FileText className="w-5 h-5 mx-auto text-blue-500 mb-1" />
-                    <div className="text-xl font-bold text-gray-900 dark:text-white">{selected.articles_count}</div>
-                    <div className="text-[10px] uppercase tracking-wide text-gray-500">
-                      {lang === 'fr' ? 'Articles' : 'Articles'}
+                  {/* Metrics */}
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <div className="text-center">
+                      <div className="text-xl font-bold text-gray-900 dark:text-white">{selected.articles_count}</div>
+                      <div className="text-[10px] text-gray-500 uppercase tracking-wide">{lang === 'fr' ? 'Articles' : 'Articles'}</div>
                     </div>
-                  </div>
-                  <div className="rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-3 text-center">
-                    <Bug className="w-5 h-5 mx-auto text-orange-500 mb-1" />
-                    <div className="text-xl font-bold text-gray-900 dark:text-white">{selected.cves_count}</div>
-                    <div className="text-[10px] uppercase tracking-wide text-gray-500">CVEs</div>
-                  </div>
-                  <div className="rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-3 text-center">
-                    <AlertTriangle className={cn('w-5 h-5 mx-auto mb-1', selected.critical_count > 0 ? 'text-red-500' : 'text-gray-400')} />
-                    <div className={cn('text-xl font-bold', selected.critical_count > 0 ? 'text-red-500' : 'text-gray-900 dark:text-white')}>
-                      {selected.critical_count}
+                    <div className="w-px h-8 bg-gray-200 dark:bg-gray-700" />
+                    <div className="text-center">
+                      <div className="text-xl font-bold text-orange-500">{selected.cves_count}</div>
+                      <div className="text-[10px] text-gray-500 uppercase tracking-wide">CVEs</div>
                     </div>
-                    <div className="text-[10px] uppercase tracking-wide text-gray-500">
-                      {lang === 'fr' ? 'Critiques' : 'Critical'}
+                    <div className="w-px h-8 bg-gray-200 dark:bg-gray-700" />
+                    <div className="text-center">
+                      <div className={cn('text-xl font-bold', selected.critical_count > 0 ? 'text-red-500' : 'text-gray-400')}>
+                        {selected.critical_count}
+                      </div>
+                      <div className="text-[10px] text-gray-500 uppercase tracking-wide">{lang === 'fr' ? 'Critiques' : 'Critical'}</div>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Content */}
-              <div className="p-5">
+              <div className="px-6 py-5">
                 <div
-                  className="text-sm leading-relaxed text-gray-700 dark:text-gray-300"
+                  className="prose-sm max-w-none"
                   dangerouslySetInnerHTML={{ __html: renderContent(getContent(selected)) }}
                 />
               </div>

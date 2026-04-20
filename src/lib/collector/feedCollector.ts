@@ -109,13 +109,17 @@ async function runWithConcurrency<T>(
 // ---------------------------------------------------------------------------
 
 const parser = new RssParser({
-  timeout: 15_000,
+  timeout: 12_000, // 12s socket timeout
   headers: {
     "User-Agent": "CyberVisor/1.0 (RSS Feed Collector)",
     Accept: "application/rss+xml, application/xml, text/xml, application/atom+xml",
   },
   maxRedirects: 3,
-});
+  requestOptions: {
+    // Ensure fetch-level abort doesn't bleed across requests
+    rejectUnauthorized: false,
+  },
+})
 
 interface SingleFeedResult {
   total: number;
@@ -128,7 +132,8 @@ async function fetchAndSaveFeed(source: Source): Promise<SingleFeedResult> {
 
   try {
     const feed = await parser.parseURL(source.url);
-    const items = feed.items ?? [];
+    // Limit to 50 most recent items per source to prevent memory bloat
+    const items = (feed.items ?? []).slice(0, 50);
     result.total = items.length;
 
     // Prepare all articles for batch insert
